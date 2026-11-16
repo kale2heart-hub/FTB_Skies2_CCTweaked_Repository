@@ -1,9 +1,12 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"control_center","title":"Control Center","launchable":false,"description":"Dynamic program launcher and version registry."}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"control_center","title":"Control Center","launchable":false,"description":"Categorized program launcher, managed shells and script version registry."}
 -- Crafting Center console launcher. All launches use fg/separate tabs.
 -- Q or Ctrl+T here closes all Control-Center-managed child programs.
 local SELF=fs.combine(shell.getRunningProgram(),""):gsub("^/+","")
 local ROOT=fs.combine(fs.getDir(SELF),""):gsub("^/+","")
 local argv={...}
+local CATEGORIES={"Applications","Console Scripts","Tools"}
+local VALID_CATEGORY={Applications=true,["Console Scripts"]=true,Tools=true}
+local SHELL_ID="__crafting_shell"
 local programs,byId,registryFiles,filesByName={},{},{},{}
 local registryWarnings={}
 local registryWriteError
@@ -46,7 +49,7 @@ local function scanPrograms(writeCache)
     for _,name in ipairs(names) do
       local path=fs.combine(dir,name)
       if fs.isDir(path) then
-        if name~="rom" and name~=".git" and name~="requests" and name~="demo_requests" then visit(path,depth+1) end
+        if name~="rom" and name~="backups" and name~=".git" and name~="requests" and name~="demo_requests" then visit(path,depth+1) end
       elseif name:sub(-4)==".lua" or not name:find("%.") then paths[#paths+1]=path end
     end
   end
@@ -65,12 +68,14 @@ local function scanPrograms(writeCache)
         local function add(action)
           local ok,entry=pcall(function()
             local id=action.id or (meta and meta.id) or ("file:"..file)
-            assert(type(id)=="string" and id~="","id must be a nonempty string")
+            assert(type(id)=="string" and id~="" and id~=SHELL_ID,"id must be unique and non-reserved")
             local title=action.title or (meta and meta.title) or fs.getName(file):gsub("%.lua$","")
             assert(type(title)=="string","title must be a string")
             local description=action.description or (meta and meta.description) or "Local script without a metadata header."
             assert(type(description)=="string","description must be a string")
-            return {id=id,title=title,file=file,args=stringList(action.args or (meta and meta.args),"args"),
+            local category=action.category or (meta and meta.category) or "Console Scripts"
+            assert(VALID_CATEGORY[category],"Unknown category: "..tostring(category))
+            return {id=id,title=title,file=file,category=category,args=stringList(action.args or (meta and meta.args),"args"),
               description=description,version=record.version,fingerprint=record.fingerprint,
               locks=stringList(action.locks or (meta and meta.locks),"locks"),
               dependencies=stringList(action.dependencies or (meta and meta.dependencies),"dependencies"),
@@ -97,6 +102,10 @@ local function scanPrograms(writeCache)
       end
     else registryWarnings[#registryWarnings+1]="Cannot read "..path end
   end
+  local terminalShell={id=SHELL_ID,title="Open Shell",file="/rom/programs/shell.lua",
+    builtin=true,allowMultiple=true,category="Tools",args={},version="system",fingerprint="builtin-shell",
+    locks={},dependencies={},description="Open a new empty shell in its own managed fg tab. Control Center stays open; its exit closes this shell too."}
+  programs[#programs+1]=terminalShell; byId[SHELL_ID]=terminalShell
   table.sort(programs,function(a,b)
     local x,y=a.title:lower(),b.title:lower()
     return x==y and a.file<b.file or x<y
@@ -118,6 +127,7 @@ scanPrograms(argv[1]~="--child")
 local selfFile=ROOT=="" and SELF or SELF:sub(#ROOT+2)
 local loadedController=filesByName[selfFile] or {version="unversioned",fingerprint="unknown"}
 local function loadedFiles(program)
+  if program.builtin then return {} end
   local result={[program.file]={version=program.version,fingerprint=program.fingerprint}}
   for _,dependency in ipairs(program.dependencies or {}) do
     local file=fs.combine(fs.getDir(program.file),dependency)
@@ -166,13 +176,15 @@ if argv[1]=="--child" then
     end
   end
   local function runner()
-    local file="/"..fs.combine(ROOT,program.file)
+    local file=program.builtin and program.file or "/"..fs.combine(ROOT,program.file)
+    if program.builtin then shell.setDir("/"..ROOT) end
     local ok,result=pcall(shell.execute,file,table.unpack(program.args or {}))
     term.redirect(console)
     term.setBackgroundColor(colors.black); term.setTextColor(colors.white)
     success=ok and result==true
     phase="finished"; announce()
     if not ok then printError(result) end
+    if program.builtin then return end -- Typing exit closes the managed shell tab.
     print("")
     print(program.title..(success and " finished." or " stopped or failed."))
     print("Q closes this tab. Select Control Center to run another tool.")
@@ -192,16 +204,35 @@ end
 
 multishell.setTitle(multishell.getCurrent(),"Control Center")
 local selected,offset=1,0
-local view="list"
+local view="categories"
+local activeCategory
+local previousView
 local notice=""
 local sessions={}
 local pending
 local sessionCounter=0
+local function visiblePrograms()
+  local result={}
+  for _,program in ipairs(programs) do if program.category==activeCategory then result[#result+1]=program end end
+  return result
+end
+local function selectedProgram()
+  if view=="categories" or view=="versions" then return nil end
+  return activeCategory and visiblePrograms()[selected] or nil
+end
+local function listSize()
+  return view=="categories" and #CATEGORIES or #visiblePrograms()
+end
 local function refreshRegistry()
-  local id=programs[selected] and programs[selected].id
+  local selectedEntry=selectedProgram()
+  local id=selectedEntry and selectedEntry.id
   scanPrograms(true)
-  selected=math.max(1,math.min(selected,math.max(1,#programs)))
-  for index,program in ipairs(programs) do if program.id==id then selected=index; break end end
+  if view=="categories" then selected=math.max(1,math.min(selected,#CATEGORIES))
+  else
+    local visible=visiblePrograms()
+    selected=math.max(1,math.min(selected,math.max(1,#visible)))
+    for index,program in ipairs(visible) do if program.id==id then selected=index; break end end
+  end
   packet("ping")
   notice=registryWriteError and "Registry cache could not be saved" or (#registryWarnings>0 and "Scan has metadata warnings - V shows details" or "Local scripts and versions refreshed")
 end
@@ -221,7 +252,7 @@ local function session(program)
   if record and clock()-record.seen<=4 then return record end
 end
 local function installed(program)
-  local path=fs.combine(ROOT,program.file)
+  local path=program.builtin and program.file or fs.combine(ROOT,program.file)
   return fs.exists(path) and not fs.isDir(path)
 end
 local function requestLaunch(program,focusOnly)
@@ -240,7 +271,7 @@ local function finishLaunch()
   local program=byId[request.id]
   if not program or program.error then notice="Script changed or disappeared; refresh and retry"; return end
   local running=session(program)
-  if running and (running.phase=="running" or request.focusOnly) then
+  if running and (request.focusOnly or (running.phase=="running" and not program.allowMultiple)) then
     packet("focus",running.token)
     notice="Opened existing "..program.title.." tab"
     return
@@ -313,30 +344,39 @@ local function render()
   if w<20 or h<10 then line(1,"Need terminal 20x10"); return 1 end
   local capacity=h-7
   line(1,"CONTROL CENTER | v"..loadedController.version,colors.blue)
-  line(2,"Separate fg tabs | Q exits all managed programs")
-  if view=="list" then
+  line(2,view=="categories" and "Choose a category | S opens a shell" or (activeCategory or "Versions"))
+  if view=="categories" then
+    line(3,"Applications / Console Scripts / Tools")
+    for index,category in ipairs(CATEGORIES) do
+      local count=0
+      for _,program in ipairs(programs) do if program.category==category then count=count+1 end end
+      line(index+3,(index==selected and "> " or "  ")..category.." ("..count..")",index==selected and colors.blue or colors.black)
+    end
+  elseif view=="list" then
+    local visible=visiblePrograms()
+    selected=math.max(1,math.min(selected,math.max(1,#visible)))
     local page=math.floor((selected-1)/capacity)
-    line(3,"Page "..(page+1).."/"..math.max(1,math.ceil(#programs/capacity)))
+    line(3,"Page "..(page+1).."/"..math.max(1,math.ceil(#visible/capacity)))
     for row=1,capacity do
       local index=page*capacity+row
-      local program=programs[index]
+      local program=visible[index]
       if program then
         local state=session(program)
         local status=program.error and "METADATA ERROR" or not installed(program) and "MISSING" or state and (state.phase=="running" and (parityStatus(state)=="RESTART NEEDED" and "RESTART" or "RUNNING") or (state.success and "FINISHED" or "STOPPED")) or "READY"
-        line(row+3,(selected==index and "> " or "  ")..program.title.." v"..program.version.." ["..status.."]",selected==index and colors.blue or colors.black)
+        line(row+3,(selected==index and "> " or "  ")..program.title..(program.builtin and "" or " v"..program.version).." ["..status.."]",selected==index and colors.blue or colors.black)
       end
     end
-    if #programs==0 then line(4,"No runnable local scripts. R rescans.") end
+    if #visible==0 then line(4,"No scripts in this category. R rescans.") end
   else
-    local program=programs[selected]
+    local program=selectedProgram()
     local state=session(program)
     local content
     if view=="versions" or not program then content=versionLines() else
-    content={program.title,"File: "..fs.combine(ROOT,program.file),
+    content={program.title,"Category: "..program.category,"File: "..(program.builtin and program.file or fs.combine(ROOT,program.file)),
       "Version on disk: "..program.version.." / "..program.fingerprint,
       "Loaded: "..(state and tostring(state.version or "unknown") or "not running").." | "..parityStatus(state),
       "Arguments: "..table.concat(program.args or {}," "),"",program.description,"",
-      "Enter: start in a foreground tab, or focus if already running.",
+      program.allowMultiple and "Enter: open a new empty shell tab." or "Enter: start a foreground tab, or focus if already running.",
       "F: focus its existing tab without starting another instance.",
       "Control Center's Q/Ctrl+T closes every managed child tab.",
       "Programs started independently outside Control Center are not managed.",
@@ -347,9 +387,9 @@ local function render()
     line(3,"Details | Lines "..(offset+1).."-"..math.min(#lines,offset+capacity).."/"..#lines)
     for row=1,capacity do line(row+3,lines[offset+row] or "") end
   end
-  line(h-3,"Arrows/PgUp/PgDn navigate | Enter run/focus")
-  line(h-2,"D details | V versions | F focus | R scan | B back")
-  line(h-1,"Q: exit Control Center AND managed programs")
+  line(h-3,"Arrows/pages | Enter select/run | B back")
+  line(h-2,"D details | V versions | S shell | F focus")
+  line(h-1,"R rescan | Q exits ALL managed programs")
   line(h,notice,colors.gray)
   return capacity
 end
@@ -379,19 +419,29 @@ local function main()
       if pending and key==pending.timer then finishLaunch()
       elseif key==tick then packet("ping"); tick=os.startTimer(1) end
     elseif event=="key" then
+      local isList=view=="list" or view=="categories"
       if key==keys.q then return
-      elseif key==keys.up then if view=="list" then selected=math.max(1,selected-1) else offset=math.max(0,offset-1) end
-      elseif key==keys.down then if view=="list" then selected=math.max(1,math.min(#programs,selected+1)) else offset=offset+1 end
-      elseif key==keys.pageUp then if view=="list" then selected=math.max(1,selected-capacity) else offset=math.max(0,offset-capacity) end
-      elseif key==keys.pageDown then if view=="list" then selected=math.max(1,math.min(#programs,selected+capacity)) else offset=offset+capacity end
-      elseif key==keys.enter then requestLaunch(programs[selected],false)
-      elseif key==keys.f then requestLaunch(programs[selected],true)
-      elseif key==keys.d then view="detail"; offset=0
-      elseif key==keys.v then view="versions"; offset=0
-      elseif key==keys.b or key==keys.backspace then view="list"
+      elseif key==keys.up then if isList then selected=math.max(1,selected-1) else offset=math.max(0,offset-1) end
+      elseif key==keys.down then if isList then selected=math.max(1,math.min(listSize(),selected+1)) else offset=offset+1 end
+      elseif key==keys.pageUp then if isList then selected=math.max(1,selected-capacity) else offset=math.max(0,offset-capacity) end
+      elseif key==keys.pageDown then if isList then selected=math.max(1,math.min(listSize(),selected+capacity)) else offset=offset+capacity end
+      elseif key==keys.enter then
+        if view=="categories" then activeCategory=CATEGORIES[selected]; view="list"; selected=1
+        elseif view~="versions" then requestLaunch(selectedProgram(),false) end
+      elseif key==keys.s then requestLaunch(byId[SHELL_ID],false)
+      elseif key==keys.f then requestLaunch(selectedProgram(),true)
+      elseif key==keys.d and selectedProgram() and view~="categories" then view="detail"; offset=0
+      elseif key==keys.v then if view~="versions" then previousView=view end; view="versions"; offset=0
+      elseif key==keys.b or key==keys.backspace then
+        if view=="detail" then view="list"
+        elseif view=="versions" then view=previousView or "categories"
+        elseif view=="list" then
+          view="categories"
+          for index,category in ipairs(CATEGORIES) do if category==activeCategory then selected=index; break end end
+        end
       elseif key==keys.r then refreshRegistry() end
     elseif event=="mouse_scroll" then
-      if view=="list" then selected=math.max(1,math.min(#programs,selected+key)) else offset=math.max(0,offset+key) end
+      if view=="list" or view=="categories" then selected=math.max(1,math.min(listSize(),selected+key)) else offset=math.max(0,offset+key) end
     end
   end
 end

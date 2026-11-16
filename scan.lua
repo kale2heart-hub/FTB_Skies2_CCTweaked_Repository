@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"scan","title":"Diagnostics","args":[],"description":"Read connected blocks, fluids, inventories and methods."}
+-- @crafting-center {"version":"1.0.1","suite":"crafting-center","id":"scan","title":"Diagnostics","args":[],"description":"Read connected blocks, fluids, inventories and methods.","category":"Console Scripts"}
 -- CC:Tweaked read-only, on-computer diagnostics. Run: scan
 -- Discovers capabilities; NEVER invokes transfers, redstone or casting.
 local ROOT=fs.getDir(shell.getRunningProgram())

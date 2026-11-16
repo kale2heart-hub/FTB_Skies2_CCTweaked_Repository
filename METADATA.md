@@ -16,7 +16,7 @@ No individual program needs to register itself or rewrite this file at startup.
 Place this in the first 32 lines, ideally the first line:
 
 ```lua
--- @crafting-center {"id":"example","title":"Example Tool","args":[],"description":"What this tool does.","version":"1.0.0"}
+-- @crafting-center {"id":"example","title":"Example Tool","category":"Console Scripts","args":[],"description":"What this tool does.","version":"1.0.0"}
 ```
 
 Use a stable unique id. The scanner determines the actual file path. Helpers
@@ -95,6 +95,36 @@ Future edits: change local source files, bump their metadata versions, commit
 and push to main. Local job/queue data is ignored by Git. Control Center's version
 view continues to compare installed versus loaded code after updating.
 
-All eight files compile under Lua 5.2. Mocked updater execution passed normal
-and fresh installs, API/download errors, invalid syntax/metadata and installation
-rollback. Full Minecraft HTTP/install behavior still needs in-game verification.
+The foundation updater was tested under Lua 5.2 with mocked normal/fresh
+installs, API/download errors, invalid syntax/metadata and rollback. For the
+current 1.1.0 build, metadata/category, resource-lock and Lua structural checks
+passed. Current shell/navigation behavior and Minecraft HTTP/install operation
+still require in-game verification.
+
+## Categories and managed shells (build 1.1.0)
+
+Control Center starts with Applications, Console Scripts and Tools. Set the
+category field in a script header or an individual action to one of those
+exact names. Actions inherit their parent script's category. Missing categories
+default to Console Scripts; invalid categories are reported as metadata errors.
+
+Current organization:
+
+- Applications: Gear UI.
+- Console Scripts: Station Setup and Diagnostics.
+- Tools: Update Scripts, casting tests and the built-in Open Shell action.
+
+Enter opens a category, B returns to the category menu, and the existing
+arrow/page navigation remains. S opens a new empty foreground shell tab from
+any view. Open Shell is also available under Tools. Shells open in the scripts
+folder. Type exit to close a shell tab; exiting Control Center closes all its
+managed shell/program tabs. Ordinary programs still reuse their existing
+managed instance; Open Shell deliberately allows multiple tabs.
+
+The shell is a built-in virtual entry, not a discovered local script, so no
+extra Lua download or script metadata file is needed. Its system implementation
+is not included in the project's version checksum. CHANGELOG.md records major
+builds; individual script metadata versions identify smaller file changes.
+
+The updater and Station Setup use backups/ for .bak files, and discovery skips
+that folder. Current source files are maintained in the local GitHub checkout.

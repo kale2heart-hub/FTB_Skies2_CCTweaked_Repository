@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"stations","title":"Station Setup","args":[],"description":"Assign cast stations and test template insertion.","dependencies":["gear_config.lua"]}
+-- @crafting-center {"version":"1.0.2","suite":"crafting-center","id":"stations","title":"Station Setup","args":[],"description":"Assign cast stations and test template insertion.","dependencies":["gear_config.lua"],"category":"Console Scripts"}
 -- Dedicated casting-station setup and ONE-template insertion test.
 -- Only T transfers an item; no command sends fluid or starts casting.
 local ROOT=fs.getDir(shell.getRunningProgram())
@@ -26,8 +26,18 @@ if fs.exists(path) then
   for role,station in pairs(saved) do bindings[role]=station end
 end
 local function save()
+  local backupRoot=fs.combine(ROOT,"backups")
+  fs.makeDir(backupRoot)
+  local backup=fs.combine(backupRoot,"gear_stations.txt.bak")
+  local legacy=path..".bak"
+  if fs.exists(legacy) and not fs.isDir(legacy) then
+    local target=backup; local suffix=1
+    while fs.exists(target) do
+      target=fs.combine(backupRoot,"gear_stations.txt.legacy"..suffix..".bak"); suffix=suffix+1
+    end
+    fs.move(legacy,target)
+  end
   if fs.exists(path) then
-    local backup=path..".bak"
     if fs.exists(backup) then fs.delete(backup) end
     fs.copy(path,backup)
   end

@@ -65,3 +65,15 @@ recipes are still being mapped and retain demo/request-only behavior.
 
 See [METADATA.md](METADATA.md) for discovery, versions and parity, and
 [station_map.md](station_map.md) for the 40-table plan.
+
+## Control Center organization
+
+Build 1.1.0 adds Applications / Console Scripts / Tools. Categories come from
+each script's metadata. Enter opens a category and B returns. S opens a new
+empty managed foreground shell without closing Control Center; Tools also has
+an Open Shell entry. Type exit to close a shell. Q in Control Center closes all
+managed programs and shell tabs.
+
+Maintain code directly in the local GitHub checkout. Major build changes are
+recorded in [CHANGELOG.md](CHANGELOG.md), while metadata versions track each
+changed script. The current 1.1.0 build is local/unreleased until published.

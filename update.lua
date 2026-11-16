@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.2","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Download and validate all scripts from one GitHub commit. Running programs keep their loaded code until restarted.","refreshAfterExit":true}
+-- @crafting-center {"version":"1.0.4","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Download and validate all scripts from one GitHub commit. Running programs keep their loaded code until restarted.","refreshAfterExit":true,"category":"Tools"}
 -- Public GitHub updater. Queue, station bindings and job state are untouched.
 local OWNER="kale2heart-hub"
 local REPOSITORY="FTB_Skies2_CCTweaked_Repository"
@@ -8,6 +8,7 @@ local files={"gear_ui.lua","gear_config.lua","scan.lua","gear_demo.lua",
     "station_setup.lua","casting_test.lua","control_center.lua","startup.lua","update.lua"}
 local root=fs.getDir(shell.getRunningProgram())
 local versions,transactions={},{}
+local backupRoot=fs.combine(root,"backups")
 local function cleanup()
     for _,name in ipairs(files) do
         local temp=fs.combine(root,name..".download")
@@ -17,7 +18,7 @@ end
 local function get(url,json)
     if not http then error("HTTP is disabled on this computer.",0) end
     local response,err,failed=http.get(url,{
-        ["User-Agent"]="CraftingCenterUpdater/1.0.2",
+        ["User-Agent"]="CraftingCenterUpdater/1.0.4",
         ["Accept"]=json and "application/vnd.github+json" or "text/plain",
     })
     if not response then
@@ -77,9 +78,24 @@ local function update()
         local chunk,err=loadfile(temp)
         if not chunk then error("Invalid Lua in "..name..": "..tostring(err),0) end
     end
+    -- Move legacy app backups out of the script folder, preserving collisions.
+    fs.makeDir(backupRoot)
+    local legacyNames={"gear_stations.txt"}
+    for _,name in ipairs(files) do legacyNames[#legacyNames+1]=name end
+    for _,name in ipairs(legacyNames) do
+        local old=fs.combine(root,name..".bak")
+        if fs.exists(old) and not fs.isDir(old) then
+            local target=fs.combine(backupRoot,name..".bak")
+            local suffix=1
+            while fs.exists(target) do
+                target=fs.combine(backupRoot,name..".legacy"..suffix..".bak"); suffix=suffix+1
+            end
+            fs.move(old,target)
+        end
+    end
     -- Prepare all backups while the original installed files remain intact.
     for _,name in ipairs(files) do
-        local entry={name=name,path=fs.combine(root,name),backup=fs.combine(root,name..".bak")}
+        local entry={name=name,path=fs.combine(root,name),backup=fs.combine(backupRoot,name..".bak")}
         entry.hadOriginal=fs.exists(entry.path)
         transactions[#transactions+1]=entry
         if entry.hadOriginal then
@@ -100,7 +116,7 @@ local function update()
             commit=sha,versions=versions,installedAt=os.epoch("utc")})); f.close()
     end)
     print("Update complete: "..sha:sub(1,12))
-    print("Previous scripts remain in .bak files.")
+    print("Previous scripts are in backups/*.bak.")
     if not ok then printError("Scripts updated, but revision receipt could not be saved.") end
 end
 local ok,err=pcall(update)
