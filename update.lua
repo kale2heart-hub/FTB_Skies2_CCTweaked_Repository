@@ -1,11 +1,11 @@
--- @crafting-center {"version":"1.0.1","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Download and validate all scripts from one GitHub commit. Running programs keep their loaded code until restarted.","refreshAfterExit":true}
+-- @crafting-center {"version":"1.0.2","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Download and validate all scripts from one GitHub commit. Running programs keep their loaded code until restarted.","refreshAfterExit":true}
 -- Public GitHub updater. Queue, station bindings and job state are untouched.
 local OWNER="kale2heart-hub"
 local REPOSITORY="FTB_Skies2_CCTweaked_Repository"
 local BRANCH="main"
 local SCRIPT_DIRECTORY="" -- Scripts currently live at the repository root.
 local files={"gear_ui.lua","gear_config.lua","scan.lua","gear_demo.lua",
-    "station_setup.lua","casting_test.lua","control_center.lua","update.lua"}
+    "station_setup.lua","casting_test.lua","control_center.lua","startup.lua","update.lua"}
 local root=fs.getDir(shell.getRunningProgram())
 local versions,transactions={},{}
 local function cleanup()
@@ -17,7 +17,7 @@ end
 local function get(url,json)
     if not http then error("HTTP is disabled on this computer.",0) end
     local response,err,failed=http.get(url,{
-        ["User-Agent"]="CraftingCenterUpdater/1.0.1",
+        ["User-Agent"]="CraftingCenterUpdater/1.0.2",
         ["Accept"]=json and "application/vnd.github+json" or "text/plain",
     })
     if not response then
