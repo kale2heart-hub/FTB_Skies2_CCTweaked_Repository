@@ -1,0 +1,11 @@
+# In-game state and downloaded/staged files
+*.download
+*.bak
+gear_stations.txt
+gear_queue.txt
+casting_test_state.txt
+control_registry.txt
+installed_revision.txt
+discovery.txt
+requests/
+demo_requests/

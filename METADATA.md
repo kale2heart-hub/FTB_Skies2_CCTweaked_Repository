@@ -64,26 +64,37 @@ use individual file/version/checksum rows to locate differences. The aggregate
 includes configuration source, so deliberate per-computer configuration changes
 will also produce a different installation fingerprint.
 
-## Deployment
+## GitHub deployment
 
-Publish the updated copies of all eight Lua files once so every current file
-has its own header. Files are in this bundle. The updater now includes:
+The repository is https://github.com/kale2heart-hub/FTB_Skies2_CCTweaked_Repository
+and its default branch is main. All eight Lua files are at its root.
 
-| File | Pastebin ID |
-|---|---|
-| gear_ui.lua | Kpv3DFpw |
-| gear_config.lua | AaycZMFq |
-| scan.lua | XBN2xPDu |
-| gear_demo.lua | nvS0XYuk |
-| station_setup.lua | RsndMVeb |
-| casting_test.lua | A0GFb1LH |
-| control_center.lua | tcBkF1vf |
-| update.lua | 9p0dsT5Z |
+The GitHub updater resolves main to one commit, downloads every script from
+that commit, checks syntax and metadata before installing, backs up installed
+files and replaces itself last. Installation failure triggers a restore
+attempt. The installed_revision.txt receipt records the commit and file versions.
+Queue state, station assignments and registry files remain local.
 
-The Control Center edit link is downloaded through its raw URL. update.lua is
-still installed last, and prints the downloaded version of each file. Existing
-queue files, station assignments and saved state are not replaced by metadata
-registration. Foreground tabs, focus/reuse, and Q/Ctrl+T managed shutdown remain.
+Update Scripts is now version 1.0.1; unchanged scripts remain version 1.0.0.
+Different script versions are valid; compare corresponding files across computers.
 
-Local metadata, action/lock, checksum and Lua block/delimiter checks passed.
-In-game multishell discovery/version behavior still needs testing.
+For the one-time migration, first publish the new update.lua in the repository.
+Then run this from the in-game scripts folder:
+
+```text
+wget https://raw.githubusercontent.com/kale2heart-hub/FTB_Skies2_CCTweaked_Repository/main/update.lua update_github.lua
+update_github
+```
+
+This installs the normal update.lua too. After success, run `delete update_github.lua` to remove the bootstrap copy;
+otherwise Control Center will detect two scripts with the same updater ID. Subsequent updates use the existing Control Center
+Update entry. HTTP access to api.github.com and raw.githubusercontent.com is
+required. No GitHub token is needed on Minecraft when the repository is public.
+
+Future edits: change local source files, bump their metadata versions, commit
+and push to main. Local job/queue data is ignored by Git. Control Center's version
+view continues to compare installed versus loaded code after updating.
+
+All eight files compile under Lua 5.2. Mocked updater execution passed normal
+and fresh installs, API/download errors, invalid syntax/metadata and installation
+rollback. Full Minecraft HTTP/install behavior still needs in-game verification.
