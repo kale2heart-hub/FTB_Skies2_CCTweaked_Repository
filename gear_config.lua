@@ -1,8 +1,9 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"gear_config","title":"Gear Config","launchable":false,"description":"Shared machine and recipe configuration; not a runnable tool."}
+-- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"gear_config","title":"Gear Config","launchable":false,"description":"Shared machine and recipe configuration; not a runnable tool."}
 -- Explicit wired peripheral names: run scan.lua to discover these.
 return {
   autoDiscoverMolten = true, -- Other menus use real molten-fluid stock; new metals use 90 mB ingots.
   liveCasting = true, -- Enables Other casts and verified standalone tool-part routes.
+  liveChestParts = true, -- Binding/Grip/Lining/Cord/Fletching/Coating deliver finished parts or material bundles.
   liveToolPartCasting = true, -- Tool Rod/Tip use real stock, even with demoMode=true.
   liveIronCasting = true, -- Enables the configured live ingot routes.
   liveIngotMaterials = {

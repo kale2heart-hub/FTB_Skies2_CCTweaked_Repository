@@ -225,6 +225,26 @@ and unsupported materials are excluded. Tool Rod and Tip have separate allowlist
 Diamond 200 mB, and an Obsidian Tool Rod takes 2,000 mB. Supported stock can differ
 if the server has changed datapacks; use overrides for those changes.
 
-These produce standalone parts for manual assembly. The remaining Tool Parts and
-Gear equipment requests retain their existing demo/request behavior. The known
+These produce standalone parts for manual assembly. Chest Tool Parts are supported
+by the delivery routes below; Gear equipment requests remain demo/request-only. The known
 case where a player manually removes output before delivery remains deferred.
+
+## Chest-supplied Tool Parts (1.6.0)
+
+Binding, Grip, Lining, Cord, Fletching and Coating now use the real parts chest.
+Choose a Part: option to deliver a ready-made part, or Material: for compatible raw
+items the player will hand-craft. Tag/item compatibility and recipe counts come
+from the installed 1.25.3 data. Cord bundles contain three material items; raw
+Coating bundles also include one glass bottle. Finished parts need no raw extras.
+Tool Rod and Tip continue using their working fluid-casting routes.
+
+Review quantities, then queue delivery to the output chest. Stock is reserved
+across queued requests. Item metadata is preserved, and different finished-part
+variants are kept separate. Resume retries only known undelivered components;
+uncertain transfer results stop for inspection. Cancellation leaves already
+sent items in the output chest. No casting fluid is used for chest deliveries.
+The shared casting_test_state.txt journal also records these delivery jobs.
+
+liveChestParts=false disables these routes. Inventory scanning stays in the
+background; menu drawing never scans the chest. Equipment/Gear kit assembly is
+still the next stage, and the known manual table-output removal issue is deferred.

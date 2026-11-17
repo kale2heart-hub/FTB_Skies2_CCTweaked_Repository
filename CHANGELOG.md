@@ -36,17 +36,20 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.2.2 |
-| gear_ui.lua | 1.5.0 |
+| gear_ui.lua | 1.6.0 |
 | station_setup.lua | 1.2.2 |
 | scan.lua | 1.0.1 |
-| update.lua | 1.0.9 |
+| update.lua | 1.1.0 |
 | cast_check.lua | 1.2.1 |
 | cast_tracking.lua | 1.1.5 |
 | casting_recovery.lua | 1.0.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
-| gear_config.lua | 1.1.0 |
+| gear_config.lua | 1.2.0 |
 | gear_casting_data.lua | 1.0.0 |
+| gear_chest_data.lua | 1.0.0 |
+| chest_catalog.lua | 1.0.0 |
+| chest_delivery.lua | 1.0.0 |
 | gear_demo.lua | 1.0.0 |
 
 ### Deployment and validation
@@ -192,3 +195,13 @@ incremented. Do not claim a release or test result before it actually occurs.
 - liveToolPartCasting enables these routes even while remaining gear screens use demo fixtures. Other tool parts and equipment requests remain at their previous stage.
 - The known manual-removal-before-delivery issue is deferred, as requested.
 - Added gear_casting_data.lua; updater 1.0.9 includes the helper.
+
+## 1.6.0 - Live chest-supplied Tool Parts (Unreleased)
+
+- Binding, Grip, Lining, Cord, Fletching and Coating now select compatible stock from the parts chest and deliver through the existing queue.
+- Finished parts retain exact item/NBT/display identity; raw materials are clearly labelled and delivered as manual-crafting bundles.
+- Material rules and counts come from installed FTB Skies 2 1.25.3. Cord raw bundles need three material items; raw Coating bundles include a glass bottle.
+- Shared item reservations include queued quantities and extra ingredients.
+- Per-component delivery journals let Resume continue a known partial bundle without resending completed components. Uncertain transfers require inspection instead of automatic repetition.
+- Parts scanning runs in the background; rendering uses cached material rules and stock. These routes use real storage even with demoMode=true.
+- Added gear_chest_data.lua, chest_catalog.lua and chest_delivery.lua; updater 1.1.0 includes them.

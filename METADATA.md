@@ -145,3 +145,9 @@ Gear UI 1.5.0 adds the non-launchable gear_casting_data.lua helper (v1.0.0), whi
 is included in its dependencies and updater 1.0.9. Tool Rod and Tip share the
 existing persisted queue/job journal; their batches specify the shape, exact fluid
 volume and Silent Gear output ID. Existing Other batches need no migration.
+
+Gear UI 1.6.0 adds helper dependencies gear_chest_data.lua, chest_catalog.lua and
+chest_delivery.lua (v1.0.0). Chest queue batches use kind="chest" with source/output
+chests and exact item/NBT components. Casting batches retain their existing schema.
+The job journal records delivered quantities per component and transfer intent;
+recovery never re-sends a component whose successful delivery was recorded.
