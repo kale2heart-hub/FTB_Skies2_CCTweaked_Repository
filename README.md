@@ -140,3 +140,7 @@ refreshes the shared cast snapshot on the configured polling interval and after
 cast state changes. Menus briefly show Checking cast stock on first startup.
 Actual casting and Resume still validate live state. Registry-recognized casts
 avoid detail queries; NBT-specific names are cached for 30 seconds.
+
+Gear UI 1.2.4 buffers monitor drawing locally and sends only changed rows after
+composing each frame. This reduces wired-modem calls when opening menus and
+avoids transmitting intermediate clears and per-button style/cursor operations.

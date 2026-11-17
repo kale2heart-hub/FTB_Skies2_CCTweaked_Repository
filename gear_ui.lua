@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.2.3","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.2.4","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Crafting Center UI: dedicated Other casting queue; equipment remains demo.
 local ROOT = fs.getDir(shell.getRunningProgram())
@@ -377,6 +377,74 @@ local function validate()
   if #errors>0 then return false,"Storage read failed; check computer" end
   return true,liveCastRoute() and ("LIVE: queue "..S.quantity.." "..S.item.." / "..(S.quantity*S.selected.Material.amount).." mB") or C.demoMode and "Demo ready - save test request" or "Ready to save request (no production yet)"
 end
+-- Monitor commands may yield across wired modems. Compose locally, then send
+-- only final changed rows, rather than every cursor/style/intermediate write.
+local function bufferedMonitor(real,w,h,scale)
+ local m={};local x,y=1,1;local fg,bg="0","f"
+ local rows,sent,palettes,sentPalettes={},{},{},{}
+ local colour=real.isColor()
+ local function blank()
+  rows={}
+  for row=1,h do rows[row]={string.rep(" ",w),string.rep(fg,w),string.rep(bg,w)} end
+ end
+ blank()
+ function m.getSize() return w,h end
+ function m.isColor() return colour end
+ function m.setCursorPos(a,b) x,y=a,b end
+ function m.setTextColor(value) fg=colors.toBlit(value) end
+ function m.setBackgroundColor(value) bg=colors.toBlit(value) end
+ function m.setTextScale(value)
+  if value==scale then return end
+  real.setTextScale(value);scale=value;w,h=real.getSize();sent={};blank()
+ end
+ function m.setPaletteColor(slot,a,b,c)
+  local signature=tostring(a)..":"..tostring(b)..":"..tostring(c)
+  palettes[slot]={a,b,c,signature}
+ end
+ function m.clear() blank() end
+ function m.blit(text,front,back)
+  local length=#text
+  if y>=1 and y<=h and length>0 then
+   local first=math.max(1,2-x);local last=math.min(length,w-x+1)
+   if first<=last then
+    local start=x+first-1;local finish=x+last-1
+    local row=rows[y]
+    local function replace(old,value) return old:sub(1,start-1)..value:sub(first,last)..old:sub(finish+1) end
+    rows[y]={replace(row[1],text),replace(row[2],front),replace(row[3],back)}
+   end
+  end
+  x=x+length
+ end
+ function m.write(text)
+  text=tostring(text);m.blit(text,string.rep(fg,#text),string.rep(bg,#text))
+ end
+ function m.flush()
+  for slot,value in pairs(palettes) do
+   if sentPalettes[slot]~=value[4] then
+    if value[2]==nil then real.setPaletteColor(slot,value[1])
+    else real.setPaletteColor(slot,value[1],value[2],value[3]) end
+    sentPalettes[slot]=value[4]
+   end
+  end
+  for row=1,h do
+   local current,previous=rows[row],sent[row]
+   if not previous or current[1]~=previous[1] or current[2]~=previous[2] or current[3]~=previous[3] then
+    real.setCursorPos(1,row);real.blit(current[1],current[2],current[3])
+    sent[row]={current[1],current[2],current[3]}
+   end
+  end
+ end
+ return m
+end
+local function flushDisplays()
+ local tasks={}
+ for _,d in ipairs(displays) do
+  local m=d.mon
+  if m.flush then tasks[#tasks+1]=function() m.flush() end end
+ end
+ if #tasks==1 then tasks[1]()
+ elseif #tasks>1 then parallel.waitForAll(table.unpack(tasks)) end
+end
 local function connect()
   displays={}; W,H=math.huge,math.huge
   local names={}
@@ -405,7 +473,7 @@ local function connect()
       local m=peripheral.wrap(name)
       m.setTextScale(C.textScale)
       local w,h=m.getSize()
-      displays[#displays+1]={name=name,mon=m,w=w,h=h,buttons={}}
+      displays[#displays+1]={name=name,mon=bufferedMonitor(m,w,h,C.textScale),w=w,h=h,buttons={}}
       W,H=math.min(W,w),math.min(H,math.max(0,h-(C.bottomMargin or 9)))
     end
   end
@@ -1355,7 +1423,7 @@ render=function()
   end
   drawJob()
 end
-connect(); refreshStock(); updatePulse(); render()
+connect(); refreshStock(); updatePulse(); render(); flushDisplays()
 print("Gear UI running. All configured monitors share control.")
 print("Other casting jobs use dedicated station assignments in gear_stations.txt.")
 print("Leave each correct cast installed; do not share stations between cast types.")
@@ -1394,8 +1462,9 @@ while true do
   elseif event=="timer" and name==timer then
     refreshStock(); render(); timer=os.startTimer(C.pollSeconds)
   elseif event=="monitor_resize" or event=="peripheral" or event=="peripheral_detach" then
-    connect(); refreshStock(); updatePulse(); render()
+    connect(); refreshStock(); os.queueEvent("gear_cast_stock_refresh"); updatePulse(); render()
   end
+  flushDisplays()
 end
 end
 parallel.waitForAny(uiLoop,castWorker,castStockWorker)

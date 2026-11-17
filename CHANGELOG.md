@@ -36,7 +36,7 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.1.0 |
-| gear_ui.lua | 1.2.3 |
+| gear_ui.lua | 1.2.4 |
 | station_setup.lua | 1.2.0 |
 | scan.lua | 1.0.1 |
 | update.lua | 1.0.7 |
@@ -111,3 +111,8 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Drawing buttons reads an in-memory cast snapshot, with no inventory scans or installation-file reads per button/monitor.
 - Periodic cast scans run in a separate parallel worker; production actions still revalidate live state.
 - Recognizable cast registry names avoid detail calls; NBT-specific display names are cached for 30 seconds.
+
+### Wired monitor drawing (Gear UI 1.2.4)
+- Monitor rendering composes in memory, then sends only changed rows with blit.
+- Unchanged rows/palette values are not sent again. Intermediate clears, cursor moves and style changes stay local.
+- The UI flushes each finished frame after event handling, including welcome/pulse updates; all monitor flushes run concurrently.
