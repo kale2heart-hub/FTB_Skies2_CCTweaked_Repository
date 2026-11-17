@@ -36,16 +36,17 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.2.2 |
-| gear_ui.lua | 1.4.0 |
+| gear_ui.lua | 1.5.0 |
 | station_setup.lua | 1.2.2 |
 | scan.lua | 1.0.1 |
-| update.lua | 1.0.8 |
+| update.lua | 1.0.9 |
 | cast_check.lua | 1.2.1 |
-| cast_tracking.lua | 1.1.4 |
+| cast_tracking.lua | 1.1.5 |
 | casting_recovery.lua | 1.0.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
-| gear_config.lua | 1.0.0 |
+| gear_config.lua | 1.1.0 |
+| gear_casting_data.lua | 1.0.0 |
 | gear_demo.lua | 1.0.0 |
 
 ### Deployment and validation
@@ -180,3 +181,14 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Reset is blocked during active or unresolved in-progress casting jobs.
 - Cast Tracking v1.1.4 exposes the shared reset operation and retains the primary
   until last if file deletion fails partway through.
+
+## 1.5.0 - Live Tool Rod and Tip casting (Unreleased)
+
+- Tool Parts > Tool Rod and Tip now select real stored, compatible molten materials and queue live casts at their assigned stations.
+- Material data extracted from installed FTB Skies 2 1.25.3 (SGear Metalworks 1.5.0, Silent Gear 4.2.1.1 and Productive Metalworks 1.15.1): 53 Tool Rod fluids and 19 Tip fluids.
+- Recipe volume is the bridge recipe's two-material requirement multiplied by each material's real melting amount; for example Iron costs 180 mB and Diamond 200 mB.
+- Existing review, quantities, fluid reservations, error locks, output delivery and bounded recovery also apply to these routes.
+- Silent Gear's silentgear:rod output is classified as Tool Rod, distinct from generic metal Rod.
+- liveToolPartCasting enables these routes even while remaining gear screens use demo fixtures. Other tool parts and equipment requests remain at their previous stage.
+- The known manual-removal-before-delivery issue is deferred, as requested.
+- Added gear_casting_data.lua; updater 1.0.9 includes the helper.

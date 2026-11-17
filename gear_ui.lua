@@ -1,10 +1,11 @@
--- @crafting-center {"version":"1.4.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.5.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
--- Crafting Center UI: dedicated Other casting queue; equipment remains demo.
+-- Crafting Center UI: live Other + Tool Rod/Tip queues; equipment assembly remains a later stage.
 local ROOT = fs.getDir(shell.getRunningProgram())
 local C = dofile(fs.combine(ROOT, "gear_config.lua"))
 local Cast=dofile(fs.combine(ROOT,"cast_tracking.lua"))(ROOT,C)
 local recoverCasting=dofile(fs.combine(ROOT,"casting_recovery.lua"))
+local gearCastingData=dofile(fs.combine(ROOT,"gear_casting_data.lua"))
 local categories = {"Weapon", "Armor", "Tool", "Accessory", "Extra"}
 local catalog = {
   -- Blades, blunt weapons, polearms, then ranged weapons.
@@ -32,9 +33,18 @@ if fs.exists(bindingPath) then
   assert(type(saved)=="table","Unreadable gear_stations.txt")
   for shape,station in pairs(saved) do castStations[shape]=station end
 end
+local function liveCastingEnabled()
+  return C.liveCasting==true or (C.liveCasting==nil and C.liveIronCasting==true)
+end
+local function liveToolPart(item,category)
+  return liveCastingEnabled() and C.liveToolPartCasting~=false and (category or S.category)=="Other Tool Parts"
+    and gearCastingData.parts[item or S.item]~=nil
+end
 local function liveCastRoute()
-  local enabled=C.liveCasting==true or (C.liveCasting==nil and C.liveIronCasting==true)
-  return enabled and S.category=="Other" and castStations[S.item] and castStations[S.item].enabled~=false
+  return liveCastingEnabled() and (S.category=="Other" or liveToolPart()) and castStations[S.item] and castStations[S.item].enabled~=false
+end
+local function castSelection()
+  return S.selected[S.category=="Other" and "Material" or S.item]
 end
 local castingAmount
 local ingotMaterials=C.liveIngotMaterials or {
@@ -61,12 +71,18 @@ local function ingotMapping(fluid,label)
   return {label=label,amount=90,outputs={},automatic=true}
 end
 local function liveFluidMenu()
-  return S.category=="Other" and C.autoDiscoverMolten~=false
+  return (S.category=="Other" and C.autoDiscoverMolten~=false) or liveToolPart()
 end
 local gemMaterials={amethyst=true,diamond=true,emerald=true,lapis=true,lapiz=true,quartz=true,fluxite=true,ender=true}
 local function castMapping(shape,fluid,label)
   local override=((C.castMaterialOverrides or {})[shape] or {})[fluid]
   if override then return override.enabled~=false and override or nil end
+  local partProfile=gearCastingData.parts[shape]
+  if partProfile then
+    local material=partProfile.materials[fluid]
+    if not material then return nil end
+    return {label=material.label,amount=material.amount,outputs=partProfile.outputs}
+  end
   if shape=="Ingot" then return ingotMapping(fluid,label) end
   local metal=ingotMapping(fluid,label)
   local name=label:lower()
@@ -147,6 +163,7 @@ local function part(name, required, source)
 end
 local function recipe(item,category)
   item=item or S.item; category=category or S.category
+  if liveToolPart(item,category) then return {verified=true,parts={part(item,true,"fluid")}} end
   local configured = C.recipes[item]
   if configured then return configured end
   -- Draft UI layouts only. No claim that these are valid pack recipes.
@@ -319,16 +336,16 @@ end
 local function options(p)
   local result={}
   local rules=C.rules
-  if S.category=="Other" then
+  if S.category=="Other" or liveToolPart() then
     rules={}
     for name,fluid in pairs(fluidStock) do
-      local mapping=liveCastRoute() and castMapping(S.item,name,fluid.label) or nil
+      local mapping=(liveCastRoute() or liveToolPart()) and castMapping(S.item,name,fluid.label) or nil
       local amount=mapping and (mapping.amount or 90) or castingAmount(S.item,fluid.label)
       if amount then
         local id=S.item.."|"..name
         local r=castingRules[id]
         if not r then
-          r={id="casting:"..id,item=S.item,part="Material",label=mapping and mapping.label or fluid.label,
+          r={id="casting:"..id,item=S.item,part=S.category=="Other" and "Material" or S.item,label=mapping and mapping.label or fluid.label,
             source="fluid",name=name,amount=amount}
           castingRules[id]=r
         end
@@ -370,7 +387,7 @@ local function validate()
   if liveCastRoute() then
     local previous=previousJob()
     if not Q.active and previous and previous.status~="done" then return false,"Previous cast needs inspection" end
-    local r=S.selected.Material
+    local r=castSelection()
     if not castMapping(S.item,r.name,r.label) then return false,r.label..": use its matching cast type" end
     local station=castStations[S.item]
     if not station or not station.peripheral or station.peripheral=="" then return false,"Assign a dedicated "..S.item.." station first" end
@@ -382,7 +399,7 @@ local function validate()
   end
   if not recipe().verified then return false,"Recipe needs pack verification" end
   if #errors>0 then return false,"Storage read failed; check computer" end
-  return true,liveCastRoute() and ("LIVE: queue "..S.quantity.." "..S.item.." / "..(S.quantity*S.selected.Material.amount).." mB") or C.demoMode and "Demo ready - save test request" or "Ready to save request (no production yet)"
+  return true,liveCastRoute() and ("LIVE: queue "..S.quantity.." "..S.item.." / "..(S.quantity*castSelection().amount).." mB") or C.demoMode and "Demo ready - save test request" or "Ready to save request (no production yet)"
 end
 -- Monitor commands may yield across wired modems. Compose locally, then send
 -- only final changed rows, rather than every cursor/style/intermediate write.
@@ -778,7 +795,7 @@ local function render()
       button(1,H-1,left,"Reset",function() S.selected={}; S.quantity=1; S.message="Selections cleared" end)
       if S.screen=="review" then
         local ok=validate()
-        button(rightX,H-1,right,liveCastRoute() and ("Add "..S.quantity.." "..(S.selected.Material and S.selected.Material.label or "").." to Queue") or "Save request",ok and saveRequest or nil)
+        button(rightX,H-1,right,liveCastRoute() and ("Add "..S.quantity.." "..(castSelection() and castSelection().label or "").." to Queue") or "Save request",ok and saveRequest or nil)
       else
         local pageLabel=""
         if S.screen=="item" and S.page<pages then
@@ -803,7 +820,7 @@ startLiveCast=function()
   readCastReport(true)
   local issue=castProblem(S.item,S.category,S.selected)
   if issue then S.message=issue; return end
-  local r=S.selected.Material
+  local r=castSelection()
   local mapping=r and castMapping(S.item,r.name,r.label)
   if not mapping then
     S.message="This material needs a different cast type"; return
@@ -1471,7 +1488,7 @@ render=function()
         action(2,"Reset",function() S.selected={}; S.quantity=1; S.message="Selections cleared" end)
         if S.screen=="review" then
           local ok=validate()
-          local material=S.selected.Material
+          local material=castSelection()
           local label=liveCastRoute() and ("Add "..S.quantity.." to Queue") or "Save request"
           action(rightX,label,ok and saveRequest or nil)
         else action(rightX,"Review",function() go("review") end) end

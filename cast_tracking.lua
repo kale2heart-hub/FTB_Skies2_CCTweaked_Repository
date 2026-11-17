@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.1.4","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
+-- @crafting-center {"version":"1.1.5","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
 return function(root,C)
  local T={}
  local statePath=fs.combine(root,"cast_installations.txt")
@@ -320,16 +320,18 @@ return function(root,C)
   local detected={};for _,candidate in ipairs(roles) do detected[#detected+1]=candidate end
   detected[#detected+1]="Block"
   table.sort(detected,function(a,b) return #a>#b end)
-  local actual
-  for _,candidate in ipairs(detected) do
-   if contains(item.name,candidate) or contains(label,candidate) then actual=candidate;break end
+  local actual=item.name=="silentgear:rod" and "Tool Rod" or nil
+  if not actual then
+   for _,candidate in ipairs(detected) do
+    if contains(item.name,candidate) or contains(label,candidate) then actual=candidate;break end
+   end
   end
   if not actual then
    for _,gem in ipairs({"Diamond","Emerald","Amethyst","Lapis","Quartz","Fluxite","Ender"}) do
     if contains(item.name,gem) or contains(label,gem) then actual="Gem";break end
    end
   end
-  local shapeMatch=contains(item.name,role) or contains(label,role)
+  local shapeMatch=actual==role or contains(item.name,role) or contains(label,role)
   if actual and actual~=role then shapeMatch=false end
   local match=shapeMatch
   -- Gems use their material name (Diamond), rather than the word Gem.

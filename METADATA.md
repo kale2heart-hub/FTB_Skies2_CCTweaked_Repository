@@ -140,3 +140,8 @@ Control Center 1.2.0's Text Files section is separate from runnable-script metad
 It discovers local .txt paths without executing them, including reports/backups.
 Text contents are cached on open and refreshed only with R; selection never
 launches a script or alters the selected file.
+
+Gear UI 1.5.0 adds the non-launchable gear_casting_data.lua helper (v1.0.0), which
+is included in its dependencies and updater 1.0.9. Tool Rod and Tip share the
+existing persisted queue/job journal; their batches specify the shape, exact fluid
+volume and Silent Gear output ID. Existing Other batches need no migration.

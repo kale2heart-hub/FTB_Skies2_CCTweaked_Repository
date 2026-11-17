@@ -207,3 +207,24 @@ tracking and its recovery copies. It never moves physical casts or deletes queue
 data. Waiting jobs pause. Finish/cancel active casts or resolve unfinished casting
 jobs first. Availability refreshes automatically after reset; casts remaining in
 tables are now unrecorded and can be confirmed in Station Setup.
+
+## Live Tool Parts (1.5.0)
+
+Tool Parts > Tool Rod and Tip now cast parts into the output chest using stations
+casting_40 and casting_41 (or saved Station Setup assignments). Select a compatible
+stocked molten material, Review, choose quantity, and add to the existing queue.
+These routes use real stock even when demoMode remains enabled for unfinished gear.
+Set liveToolPartCasting=false to disable them. castMaterialOverrides still takes
+precedence for server-specific changes.
+
+gear_casting_data.lua was extracted from the locally installed FTB Skies 2 1.25.3
+resources: bridge material_count=2, casting-enabled material properties for the
+requested part type, and exact ingredient-tag melting amounts. Infusing materials
+and unsupported materials are excluded. Tool Rod and Tip have separate allowlists
+(53 and 19 fluids); menus show only those actually in storage. Iron takes 180 mB,
+Diamond 200 mB, and an Obsidian Tool Rod takes 2,000 mB. Supported stock can differ
+if the server has changed datapacks; use overrides for those changes.
+
+These produce standalone parts for manual assembly. The remaining Tool Parts and
+Gear equipment requests retain their existing demo/request behavior. The known
+case where a player manually removes output before delivery remains deferred.
