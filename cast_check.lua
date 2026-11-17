@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"cast_check","title":"Check Cast Chest","category":"Tools","args":[],"description":"Read the cast chest and show found, missing and unidentified casts against the 40-cast plan.","dependencies":["gear_config.lua"]}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"cast_check","title":"Check Cast Chest","category":"Tools","args":[],"description":"Read the cast chest and show found, missing and unidentified casts against the 40-cast plan.","dependencies":["gear_config.lua"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local configPath=fs.combine(ROOT,"gear_config.lua")
 local C=fs.exists(configPath) and dofile(configPath) or {}
@@ -32,10 +32,24 @@ local count,stacks=0,0
 local view,selected,offset="missing",1,0
 local notice=""
 local detail
+local REPORT=fs.combine(ROOT,"cast_availability.txt")
+local function saveAvailability()
+ local report={schema=1,chest=CHEST,checkedAt=os.epoch("utc"),valid=scanError==nil,
+  error=scanError,casts={},unknownCount=#unknown,scope="chest"}
+ for _,role in ipairs(required) do
+  report.casts[role]={available=scanError==nil and found[role]~=nil,
+   quantity=found[role] and found[role].quantity or 0}
+ end
+ local ok,err=pcall(function()
+  local f=assert(fs.open(REPORT,"w")); f.write(textutils.serialize(report)); f.close()
+ end)
+ notice=ok and "Saved cast_availability.txt" or "Report save failed: "..tostring(err)
+ if ok then os.queueEvent("gear_cast_availability") end
+end
 local function scan()
  found,unknown,scanError={},{},nil; count,stacks=0,0
  local ok,items=pcall(peripheral.call,CHEST,"list")
- if not ok or type(items)~="table" then scanError="Cannot read "..CHEST..": "..tostring(items); return end
+ if not ok or type(items)~="table" then scanError="Cannot read "..CHEST..": "..tostring(items); saveAvailability(); return end
  for slot,item in pairs(items) do
   stacks=stacks+1
   local detailOK,info=pcall(peripheral.call,CHEST,"getItemDetail",slot)
@@ -59,7 +73,7 @@ local function scan()
  end
  for _,role in ipairs(required) do if found[role] then count=count+1; table.sort(found[role].slots,function(a,b) return a.slot<b.slot end) end end
  table.sort(unknown,function(a,b) return a.slot<b.slot end)
- selected=1; offset=0
+ selected=1; offset=0; saveAvailability()
 end
 local function entries()
  local rows={}
@@ -104,7 +118,7 @@ local function render()
  end
  if w<20 or h<10 then line(1,"Need terminal 20x10"); return 1,{} end
  local capacity=h-7
- line(1,"CAST CHEST CHECK | v1.0.0",colors.blue)
+ line(1,"CAST CHEST CHECK | v1.1.0",colors.blue)
  line(2,scanError and "Chest unreadable - no result" or ("Found "..count.."/40 | Missing "..(40-count).." | Unknown "..#unknown))
  line(3,detail and "DETAILS" or view:upper().." | "..CHEST)
  local rows=entries()
@@ -130,7 +144,7 @@ local function render()
  end
  line(h-3,"Arrows/pages | Enter details | B back")
  line(h-2,"M missing | F found | A all | U unknown")
- line(h-1,"R rescan | Q quit (read-only)")
+ line(h-1,"R rescan | Q quit | Report auto-saved")
  line(h,notice~="" and notice or (#unknown>0 and "Unknown names may affect missing results." or "Checks chest only, not installed casts."),colors.gray)
  return capacity,rows
 end
@@ -141,7 +155,7 @@ while true do
  if event=="key" then
   notice=""
   if key==keys.q then break
-  elseif key==keys.r then detail=nil; scan(); notice="Rescanned cast chest"
+  elseif key==keys.r then detail=nil; scan()
   elseif key==keys.b or key==keys.backspace then detail=nil
   elseif key==keys.enter or key==keys.d then if not detail then inspect(rows[selected]) end
   elseif key==keys.m or key==keys.f or key==keys.a or key==keys.u then

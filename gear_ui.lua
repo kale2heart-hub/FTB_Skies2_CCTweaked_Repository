@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.1","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Crafting Center UI: dedicated Other casting queue; equipment remains demo.
 local ROOT = fs.getDir(shell.getRunningProgram())
@@ -137,26 +137,67 @@ end
 local function part(name, required, source)
   return {name=name, required=required, source=source or "chest"}
 end
-local function recipe()
-  local configured = C.recipes[S.item]
+local function recipe(item,category)
+  item=item or S.item; category=category or S.category
+  local configured = C.recipes[item]
   if configured then return configured end
   -- Draft UI layouts only. No claim that these are valid pack recipes.
-  if S.category == "Other" then
+  if category == "Other" then
     return {verified=true,parts={part("Material",true,"fluid")}}
-  elseif S.category == "Other Tool Parts" then
-    return {parts={part(S.item,true,S.item=="Tool Rod" and "fluid" or "chest")}}
-  elseif S.category == "Armor" then
+  elseif category == "Other Tool Parts" then
+    return {parts={part(item,true,item=="Tool Rod" and "fluid" or "chest")}}
+  elseif category == "Armor" then
     return {parts={part("Main",true,"fluid"),part("Lining",true)}}
-  elseif S.category == "Accessory" then
+  elseif category == "Accessory" then
     return {parts={part("Main",true,"fluid"),part("Jewelry Setting",false)}}
   else
     local p={part("Main",true,"fluid"),part("Tool Rod",true,"fluid")}
-    if S.item=="Bow" or S.item=="Crossbow" or S.item=="Slingshot" then
+    if item=="Bow" or item=="Crossbow" or item=="Slingshot" then
       p[#p+1]=part("Cord",true)
     end
     for _,n in ipairs({"Tip","Coating","Binding","Grip"}) do p[#p+1]=part(n,false) end
     return {parts=p}
   end
+end
+-- Chest audit is re-read on a short cache so the console checker can run beside UI.
+local castReport,castReportError,castReportAt=nil,nil,-10
+local function readCastReport()
+ if os.clock()-castReportAt<1 then return end
+ castReportAt=os.clock(); castReport=nil
+ local ok,result=pcall(function()
+  local f=fs.open(fs.combine(ROOT,"cast_availability.txt"),"r")
+  if not f then error("Run Check Cast Chest to create the cast report",0) end
+  local raw=f.readAll(); f.close()
+  local report=textutils.unserialize(raw)
+  if type(report)~="table" or report.schema~=1 or type(report.casts)~="table" then error("Cast report unreadable; rescan cast chest",0) end
+  if not report.valid then error("Cast chest scan failed; rescan cast chest",0) end
+  if report.chest~=(C.castChest or "sophisticatedstorage:chest_1") then error("Cast chest changed; rescan cast chest",0) end
+  return report
+ end)
+ if ok then castReport=result; castReportError=nil else castReportError=tostring(result) end
+end
+local function castProblem(item,category,selected)
+ local needed={}
+ if category=="Other" then
+  if item~="Block" then needed[item]=true end -- Basin blocks do not use a cast.
+ else
+  for _,p in ipairs(recipe(item,category).parts) do
+   local chosen=selected and selected[p.name]
+   if (p.required and p.source=="fluid") or (chosen and chosen.source=="fluid") then
+    needed[p.name=="Main" and item or p.name]=true
+   end
+  end
+ end
+ if not next(needed) then return nil end
+ readCastReport()
+ if not castReport then return castReportError,colors.orange end
+ local missing={}
+ for role in pairs(needed) do
+  local entry=castReport.casts[role]
+  if type(entry)~="table" or entry.available~=true then missing[#missing+1]=role end
+ end
+ table.sort(missing)
+ if #missing>0 then return "Missing casts: "..table.concat(missing,", "),colors.red end
 end
 castingAmount=function(item,material)
   local name=material:lower():gsub("^.*:",""):gsub("^molten_",""):gsub("_"," ")
@@ -281,6 +322,8 @@ local function options(p)
   return result
 end
 local function validate()
+  local issue=castProblem(S.item,S.category,S.selected)
+  if issue then return false,issue end
   local demands={}
   for _,p in ipairs(recipe().parts) do
     local r=S.selected[p.name]
@@ -661,6 +704,8 @@ local function castCall(name,method,...)
   return value
 end
 startLiveCast=function()
+  local issue=castProblem(S.item,S.category,S.selected)
+  if issue then S.message=issue; return end
   local r=S.selected.Material
   local mapping=r and castMapping(S.item,r.name,r.label)
   if not mapping then
@@ -798,6 +843,9 @@ local function castWorker()
       local batch=Q.batches[1]
       local fluid,amount=batch.fluid,batch.amount
       local tableName=batch.station
+      castReportAt=-10
+      local issue=castProblem(batch.shape,"Other")
+      if issue then error(issue,0) end
       if not tableName or tableName=="" then error("No dedicated station assigned to "..batch.shape,0) end
       local sources={}
       local seen={}
@@ -1029,6 +1077,13 @@ local function renderSpecial()
       button(start,8,half,"Gear",function() openSection("gear") end)
       button(start+half+2,8,menuWidth-half-2,"Tool Parts",function() openSection("parts") end)
       button(start,11,menuWidth,"Other",function() openSection("other") end)
+    elseif S.screen=="castIssue" then
+      text(1,"CAST AVAILABILITY",colors.blue)
+      button(1,3,math.floor(W*.43),"<< Back",function() go(S.issueReturn or "item") end,colors.gray)
+      local lines=wrapWords(S.castIssue or "Cast check needed",W-2)
+      for i,line in ipairs(lines) do if 6+i<H-5 then text(6+i,line) end end
+      text(H-4,"Check Cast Chest > R to refresh")
+      text(H-2,"Report covers chest stock only")
     elseif S.screen=="sectionItems" or S.screen=="category" or S.screen=="item" then
       local gearCategories=S.screen=="category"
       local title=gearCategories and "Gear" or S.section=="gear" and S.category or S.section=="parts" and "Tool Parts" or "Other | Casting"
@@ -1046,11 +1101,17 @@ local function renderSpecial()
         local item=items[(S.page-1)*count+i]
         if item then
           local x=i%2==1 and 1 or half+3
-          button(x,7+math.floor((i-1)/2)*3,i%2==1 and half or W-half-2,item,function()
+          local issue,issueColor
+          if not gearCategories then issue,issueColor=castProblem(item,S.category) end
+          button(x,7+math.floor((i-1)/2)*3,i%2==1 and half or W-half-2,(issue and "! " or "")..item,function()
+            local problem=not gearCategories and castProblem(item,S.category)
+            if problem then
+              S.issueReturn=S.screen; S.castIssue=problem; go("castIssue"); return
+            end
             S.selected={}; S.quantity=1
             if gearCategories then S.category=item; S.item=nil; go("item")
             else S.item=item; go("part") end
-          end)
+          end,issueColor)
         end
       end
       if S.page>1 then button(1,H-4,half,"Previous",function() S.page=S.page-1 end,colors.gray) end
@@ -1100,7 +1161,7 @@ render=function()
   for _,d in ipairs(displays) do
     if d.welcomeActive then d.mon.setTextScale(C.textScale); d.welcomeActive=false; d.welcomePage=nil end
   end
-  local special=S.screen=="welcome" or S.screen=="main" or S.screen=="sectionItems" or S.screen=="category" or S.screen=="item" or S.screen=="queue"
+  local special=S.screen=="castIssue" or S.screen=="welcome" or S.screen=="main" or S.screen=="sectionItems" or S.screen=="category" or S.screen=="item" or S.screen=="queue"
   if special then renderSpecial() else renderScreen() end
   for _,d in ipairs(displays) do
     if W>=30 and H>=20 then

@@ -91,3 +91,10 @@ not casts already installed on tables. Unknown names are not guessed; review
 them before treating an undetected cast as truly absent. No items or fluids
 are transferred. Cast names/aliases and exact-ID overrides can be extended
 when real pack items are inspected.
+
+Cast checker saves local cast_availability.txt on startup and R refresh. Gear UI
+reloads it while running, flags missing required casts red, and shows details
+when pressed. Missing/invalid reports are amber. Block uses a basin without a
+cast. Gear, tool parts and live Other casting use the report.
+The report only covers chest contents, not installed casts, station readiness,
+or recipe compatibility. Refresh after changing chest stock.

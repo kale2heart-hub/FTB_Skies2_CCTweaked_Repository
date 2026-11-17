@@ -36,11 +36,11 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.1.0 |
-| gear_ui.lua | 1.0.1 |
+| gear_ui.lua | 1.1.0 |
 | station_setup.lua | 1.0.2 |
 | scan.lua | 1.0.1 |
 | update.lua | 1.0.6 |
-| cast_check.lua | 1.0.0 |
+| cast_check.lua | 1.1.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
 | gear_config.lua | 1.0.0 |
@@ -74,3 +74,8 @@ user-facing changes, changed script versions, any migration actions and test
 status. Mark it Unreleased until the build is published. Routine small fixes
 can remain under the current build while their individual script versions are
 incremented. Do not claim a release or test result before it actually occurs.
+
+### Cast availability integration
+- Check Cast Chest now saves cast_availability.txt on every scan, including scan errors.
+- Gear UI flags missing required casts in red and report problems in amber; tapping explains the issue.
+- Queue submission and each new cast recheck cast availability.
