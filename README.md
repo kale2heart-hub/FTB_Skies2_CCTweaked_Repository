@@ -77,3 +77,15 @@ managed programs and shell tabs.
 Maintain code directly in the local GitHub checkout. Major build changes are
 recorded in [CHANGELOG.md](CHANGELOG.md), while metadata versions track each
 changed script. The current 1.1.0 build is local/unreleased until published.
+
+## Cast chest audit
+
+cast_check.lua is a read-only 40-cast inventory checker under Tools. It reads
+the configured castChest (chest_1 by default), compares registry/display names
+and shows Missing, Found, All and Unknown views. M/F/A/U switch views, R scans
+again, Enter/D shows details, B returns and Q exits. It counts unique cast
+types separately from duplicate stack quantities and checks only the chest,
+not casts already installed on tables. Unknown names are not guessed; review
+them before treating an undetected cast as truly absent. No items or fluids
+are transferred. Cast names/aliases and exact-ID overrides can be extended
+when real pack items are inspected.

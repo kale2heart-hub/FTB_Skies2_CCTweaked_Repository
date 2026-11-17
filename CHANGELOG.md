@@ -15,6 +15,7 @@ Date: 2026-11-16
 - Open Shell in Tools and an S shortcut available throughout Control Center.
 - A new empty managed foreground shell tab for each Open Shell action.
 - This changelog for future major builds.
+- Read-only cast-chest checker with Missing/Found/All/Unknown views.
 
 ### Changed
 
@@ -36,7 +37,8 @@ Date: 2026-11-16
 | gear_ui.lua | 1.0.1 |
 | station_setup.lua | 1.0.2 |
 | scan.lua | 1.0.1 |
-| update.lua | 1.0.4 |
+| update.lua | 1.0.5 |
+| cast_check.lua | 1.0.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
 | gear_config.lua | 1.0.0 |
