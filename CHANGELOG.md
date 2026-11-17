@@ -4,6 +4,22 @@ This log records major build changes. Script metadata versions remain separate
 and identify individual files. Unreleased entries describe local work that has
 not yet been committed or published as a release.
 
+## 2.1.0 - Gear material review (Unreleased)
+
+Date: 2026-11-17
+
+- Review now includes Selections and Stats & Traits tabs for Gear and Tool Parts.
+- Added a local FTB Skies 2 1.25.3 snapshot: 77 compatible materials, 72 trait
+  definitions, and all 57 supported main-casting fluid mappings.
+- Shows relevant material base stats, part modifiers, per-part trait levels and
+  descriptions. Conditional traits are marked; levels are not summed together.
+- Raw chest selections retain unambiguous material IDs. Finished/mixed parts and
+  unmapped custom materials explicitly report unavailable stats instead of guessing.
+- This first preview shows material contributions, not calculated finished equipment
+  totals. Grades, synergy, trait effects and equipment multipliers remain excluded.
+- Preview paging preserves quantity and queue controls and performs no inventory
+  or file reads during drawing. Updater includes both new preview modules.
+
 ## 1.1.0 - Control Center organization (Unreleased)
 
 Date: 2026-11-16

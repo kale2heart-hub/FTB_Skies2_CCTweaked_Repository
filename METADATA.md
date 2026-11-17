@@ -156,3 +156,7 @@ Gear UI 2.0.0 adds gear_kit_data.lua and gear_request.lua to its helper dependen
 Kit requests append ordinary casting/chest batches with requestId, requestItem,
 kitNumber, kitTotal and partName metadata. Each has its own persistent job token;
 existing queue formats remain valid. Preview planning uses cached stock only.
+
+- `gear_stats_data.lua` (1.0.0): non-launchable FTB Skies 2 1.25.3 material/trait snapshot.
+- `gear_preview.lua` (1.0.0): non-launchable pure review formatter; no storage access.
+- Gear UI 2.1.0 adds both modules as dependencies; updater 1.3.0 installs them.

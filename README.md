@@ -275,3 +275,16 @@ gear_kit_data.lua records exact primary casting amounts/output IDs; gear_request
 plans the grouped jobs without inventory/file reads during drawing. All three
 monitors keep the same selection and request queue. Existing queue batches remain
 compatible. The new helpers are included in updater 1.2.0.
+
+### Material stats and traits (Gear UI 2.1.0)
+
+On a Gear or Tool Parts review, select **Stats & Traits**. The paged panel shows
+material base values and part modifiers from the installed FTB Skies 2 1.25.3
+material definitions, plus trait levels and descriptions. Conditional traits are
+marked. **Selections** returns to the selected-parts summary.
+
+These are material contributions, not final equipment totals: grades, synergy,
+trait effects, and equipment-specific multipliers are not calculated. Finished
+parts with unreadable material components and unmapped custom materials show
+unavailable details. The material snapshot must be regenerated when pack data
+changes; live inventory availability remains separate.

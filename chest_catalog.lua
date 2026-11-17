@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"chest_catalog","title":"Chest Material Catalog","launchable":false,"description":"Cached compatible raw materials and finished parts from the parts chest."}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"chest_catalog","title":"Chest Material Catalog","launchable":false,"description":"Cached compatible raw materials and finished parts from the parts chest."}
 return function(C,data,key)
  local T={rules={},stock={},error="Checking parts chest..."}
  local cache,details,counts={},{},{}
@@ -23,9 +23,14 @@ return function(C,data,key)
     for role,profile in pairs(data.parts) do
      local finished=item.name==profile.finished
      local compatible=finished
+     local materialId,ambiguous
      if not compatible then
       for _,material in ipairs(profile.materials) do
-       if material.item==item.name or (material.tag and detail.tags and detail.tags[material.tag]) then compatible=true;break end
+       if material.item==item.name or (material.tag and detail.tags and detail.tags[material.tag]) then
+        compatible=true
+        if materialId and materialId~=material.materialId then ambiguous=true end
+        materialId=material.materialId
+       end
       end
      end
      if compatible then
@@ -40,6 +45,7 @@ return function(C,data,key)
          displayName=finished and detail.displayName or nil,extras=finished and {} or profile.extras}
         cache[id]=r
        end
+       r.materialId=not finished and not ambiguous and materialId or nil
        rules[role][#rules[role]+1]=r;newCounts[id]=0
       end
       newCounts[id]=newCounts[id]+item.count

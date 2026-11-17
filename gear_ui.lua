@@ -1,4 +1,4 @@
--- @crafting-center {"version":"2.0.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"2.1.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Live casting and chest-delivery queues, including Gear part kits for manual assembly.
 local ROOT = fs.getDir(shell.getRunningProgram())
@@ -10,6 +10,7 @@ local chestPartData=dofile(fs.combine(ROOT,"gear_chest_data.lua"))
 local makeChestCatalog=dofile(fs.combine(ROOT,"chest_catalog.lua"))
 local deliverChest=dofile(fs.combine(ROOT,"chest_delivery.lua"))
 local gearKitData=dofile(fs.combine(ROOT,"gear_kit_data.lua"))
+local previewGear=dofile(fs.combine(ROOT,"gear_preview.lua"))(dofile(fs.combine(ROOT,"gear_stats_data.lua")))
 local planGearRequest=dofile(fs.combine(ROOT,"gear_request.lua"))
 for role,profile in pairs(gearKitData.profiles) do gearCastingData.parts[role]=profile;Cast.registerOutputs(role,profile.outputs) end
 local chestCatalog
@@ -852,6 +853,38 @@ local function render()
       text(1,6,left,S.screen=="review" and "Selected parts" or "Categories",colors.blue)
       text(rightX,6,right,S.screen=="review" and "Request summary" or (S.category or "Choose equipment"),colors.blue)
       if S.screen=="review" then
+        if S.category~="Other" then
+        button(1,6,left,"Selections",function() S.reviewTab="parts" end,S.reviewTab~="stats" and colors.cyan or colors.blue)
+        button(rightX,6,right,"Stats & Traits",function() S.reviewTab="stats" end,S.reviewTab=="stats" and colors.cyan or colors.blue)
+        end
+        if S.reviewTab=="stats" and S.category~="Other" then
+          local wrapped={}
+          for _,paragraph in ipairs(previewGear(S.item,recipe().parts,S.selected)) do
+            if paragraph=="" then wrapped[#wrapped+1]="" end
+            local row=""
+            for word in paragraph:gmatch("%S+") do
+              if #row+#word+1>W and row~="" then wrapped[#wrapped+1]=row;row="" end
+              while #word>W do
+                if row~="" then wrapped[#wrapped+1]=row;row="" end
+                wrapped[#wrapped+1]=word:sub(1,W);word=word:sub(W+1)
+              end
+              row=row=="" and word or row.." "..word
+            end
+            if row~="" then wrapped[#wrapped+1]=row end
+          end
+          local perPage=math.max(1,H-19)
+          local total=math.max(1,math.ceil(#wrapped/perPage))
+          S.statsPage=math.max(1,math.min(S.statsPage or 1,total))
+          for i=1,perPage do
+            local label=wrapped[(S.statsPage-1)*perPage+i]
+            if label then text(1,9+i,W,label,colors.black,colors.white) end
+          end
+          if total>1 then
+            button(1,H-8,left,"Up",S.statsPage>1 and function() S.statsPage=S.statsPage-1 end or nil)
+            button(rightX,H-8,right,"Down",S.statsPage<total and function() S.statsPage=S.statsPage+1 end or nil)
+            line(9,"Page: "..S.statsPage.." / "..total,colors.black,colors.lightGray)
+          end
+        else
         for i=1,itemList.count do
           local p=recipe().parts[itemList.offset+i]
           if p then
@@ -861,6 +894,7 @@ local function render()
             text(rightX,y,right,materialLabel(r,right),colors.blue)
             if r then text(rightX,y+2,right,"Need "..(r.amount*(liveRequest() and S.quantity or 1))..(r.source=="fluid" and " mB" or " items"),colors.black,colors.lightGray) end
           end
+        end
         end
       else
         -- Category menu remains visible while paging through equipment.
@@ -880,8 +914,10 @@ local function render()
         end
       end
       if S.screen=="review" then
+        if S.reviewTab~="stats" or S.category=="Other" then
         button(1,8,left,"Up",S.page>1 and function() S.page=S.page-1 end or nil)
         button(1,H-5,left,"Down",S.page<pages and function() S.page=S.page+1 end or nil)
+        end
       else
         local cp=listPage(#categories,S.categoryPage).pages
         button(1,8,left,"Up",S.categoryPage>1 and function() S.categoryPage=S.categoryPage-1 end or nil)
