@@ -36,12 +36,12 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.2.2 |
-| gear_ui.lua | 1.3.2 |
+| gear_ui.lua | 1.4.0 |
 | station_setup.lua | 1.2.2 |
 | scan.lua | 1.0.1 |
 | update.lua | 1.0.8 |
 | cast_check.lua | 1.2.1 |
-| cast_tracking.lua | 1.1.3 |
+| cast_tracking.lua | 1.1.4 |
 | casting_recovery.lua | 1.0.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
@@ -170,3 +170,13 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Actual TableError locks, pending transfers and genuine suspect states remain protected.
 - A missing cast still becomes missing on zero acceptance; a wrong cast still sets TableError through output verification.
 - Station Setup bulk delivery skips unverified installations; Text Reader colours unverified as a warning.
+
+## 1.4.0 - Gear UI Utilities (Unreleased)
+
+- Utilities button is anchored at the bottom of the main menu.
+- Reset Installed Cast List reviews and deletes the primary installation record,
+  pending save, backup and staged backup, then refreshes cast availability.
+- Physical casts and queue data are unchanged; waiting jobs pause until Resume.
+- Reset is blocked during active or unresolved in-progress casting jobs.
+- Cast Tracking v1.1.4 exposes the shared reset operation and retains the primary
+  until last if file deletion fails partway through.

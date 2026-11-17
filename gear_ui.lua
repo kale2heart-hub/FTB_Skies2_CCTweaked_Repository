@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.3.2","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.4.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Crafting Center UI: dedicated Other casting queue; equipment remains demo.
 local ROOT = fs.getDir(shell.getRunningProgram())
@@ -1147,6 +1147,26 @@ local function cancelWaiting(id,one)
   S.message=cancelledCurrent and "Cancelled. Table contents left for inspection." or one and "Removed one item" or "Removed selected items"
   os.queueEvent("gear_job_update")
 end
+local function resetCastInstallations()
+  if S.busy or Q.active then
+    S.message="Finish or cancel the active cast before resetting tracking."
+    return
+  end
+  local old=previousJob()
+  if old and old.status~="done" then
+    S.message="Resolve the pending casting job before resetting tracking."
+    return
+  end
+  if #Q.batches>0 then
+    Q.paused=true;Q.reason="Installed-cast tracking reset; review tables before Resume";saveQueue()
+  end
+  S.busy=true
+  local ok,result=pcall(Cast.resetInstallations)
+  S.busy=false
+  readCastReport(true)
+  go("utilities")
+  S.message=ok and ("Installed-cast tracking reset. Deleted "..result.." files. Physical casts unchanged.") or tostring(result)
+end
 local function openMain()
   S.category=nil; S.item=nil; S.selected={}; S.quantity=1; go("main")
 end
@@ -1286,6 +1306,27 @@ local function renderSpecial()
       button(start,8,half,"Gear",function() openSection("gear") end)
       button(start+half+2,8,menuWidth-half-2,"Tool Parts",function() openSection("parts") end)
       button(start,11,menuWidth,"Other",function() openSection("other") end)
+      button(start,H-1,menuWidth,"Utilities",function() go("utilities") end,colors.gray)
+    elseif S.screen=="utilities" then
+      text(1,"UTILITIES",colors.blue)
+      button(1,3,math.floor(W*.43),"<< Back",function() go("main") end,colors.gray)
+      text(6,"Quick actions and options")
+      button(2,8,W-2,"Reset Installed Cast List",function() go("resetCastReview") end,colors.red)
+      local lines=wrapWords(S.message~="" and S.message or "Reset tracking records without moving physical casts.",W-2)
+      for i,line in ipairs(lines) do if 12+i<=H-3 then text(12+i,line) end end
+    elseif S.screen=="resetCastReview" then
+      text(1,"RESET INSTALLED CASTS",colors.blue)
+      button(1,3,math.floor(W*.43),"<< Back",function() go("utilities") end,colors.gray)
+      local lines={"Delete these installation tracking files?",
+        "cast_installations.txt", "cast_installations.txt.download",
+        "backups/cast_installations.txt.bak", "backups/cast_installations.txt.bak.download",
+        "Physical casts stay in their tables.","Queue data stays; waiting jobs will pause."}
+      for i,line in ipairs(lines) do text(5+i,line) end
+      local note=S.message~="" and S.message or ((S.busy or Q.active) and "Finish or cancel the active cast first." or "The installed cast list will become empty.")
+      for i,line in ipairs(wrapWords(note,W-2)) do if 13+i<=H-3 then text(13+i,line) end end
+      local half=math.floor((W-2)/2)
+      button(1,H-1,half,"Cancel",function() go("utilities") end,colors.gray)
+      button(half+3,H-1,W-half-2,"Confirm Reset",not S.busy and not Q.active and resetCastInstallations or nil,colors.red)
     elseif S.screen=="castIssue" then
       text(1,"ERROR REPORT",colors.red)
       button(1,3,math.floor(W*.43),"<< Back",function() go(S.issueReturn or "item") end,colors.gray)
@@ -1383,7 +1424,7 @@ render=function()
   for _,d in ipairs(displays) do
     if d.welcomeActive then d.mon.setTextScale(C.textScale); d.welcomeActive=false; d.welcomePage=nil end
   end
-  local special=S.screen=="castIssue" or S.screen=="welcome" or S.screen=="main" or S.screen=="sectionItems" or S.screen=="category" or S.screen=="item" or S.screen=="queue"
+  local special=S.screen=="utilities" or S.screen=="resetCastReview" or S.screen=="castIssue" or S.screen=="welcome" or S.screen=="main" or S.screen=="sectionItems" or S.screen=="category" or S.screen=="item" or S.screen=="queue"
   if special then renderSpecial() else renderScreen() end
   for _,d in ipairs(displays) do
     if W>=30 and H>=20 then

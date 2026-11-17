@@ -200,3 +200,10 @@ than blocking every table. The next ordinary requested cast verifies that table'
 output using the existing guards and recovery limits. No extra test pour is added
 and unverified installations do not cause duplicate cast insertion. Actual wrong
 casts, pending transfers and genuine suspect records remain protected.
+
+Gear UI 1.4.0 adds Utilities at the bottom of the main menu. Choose Reset Installed
+Cast List, review the four filenames and Confirm Reset to erase installation
+tracking and its recovery copies. It never moves physical casts or deletes queue
+data. Waiting jobs pause. Finish/cancel active casts or resolve unfinished casting
+jobs first. Availability refreshes automatically after reset; casts remaining in
+tables are now unrecorded and can be confirmed in Station Setup.

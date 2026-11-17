@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.1.3","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
+-- @crafting-center {"version":"1.1.4","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
 return function(root,C)
  local T={}
  local statePath=fs.combine(root,"cast_installations.txt")
@@ -119,6 +119,23 @@ return function(root,C)
   end)
   writing=false;snapshot=nil
   if not ok then error("Could not save cast installations: "..tostring(err),0) end
+ end
+ function T.resetInstallations()
+  local paths={backupPath..".download",backupPath,statePath..".download",statePath}
+  -- Check all targets before deletion, and leave the primary until last.
+  for _,path in ipairs(paths) do
+   assert(not fs.exists(path) or not fs.isDir(path),"Cannot reset: expected a file at "..path)
+  end
+  snapshot={};writing=true
+  local removed=0
+  local ok,err=pcall(function()
+   for _,path in ipairs(paths) do if fs.exists(path) then fs.delete(path);removed=removed+1 end end
+  end)
+  writing=false;snapshot=nil
+  os.queueEvent("gear_cast_availability")
+  if not ok then error("Installation reset incomplete: "..tostring(err),0) end
+  T.refreshAvailability()
+  return removed
  end
  function T.record(role,target,status,reason)
   local state=readState();local previous=state[target]
