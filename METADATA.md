@@ -69,10 +69,11 @@ will also produce a different installation fingerprint.
 The repository is https://github.com/kale2heart-hub/FTB_Skies2_CCTweaked_Repository
 and its default branch is main. All eight Lua files are at its root.
 
-The GitHub updater resolves main to one commit, downloads every script from
-that commit, checks syntax and metadata before installing, backs up installed
-files and replaces itself last. Installation failure triggers a restore
-attempt. The installed_revision.txt receipt records the commit and file versions.
+The GitHub updater resolves main to one commit and checks update.lua first.
+If its contents changed (ignoring line endings), it validates and backs up the
+new updater, installs it and reboots. Startup then runs the new updater to
+validate and install the remaining scripts. Installation failure triggers a
+restore attempt; failed updates do not reboot. The installed_revision.txt receipt records the commit and file versions.
 Queue state, station assignments and registry files remain local.
 
 Update Scripts is now version 1.0.1; unchanged scripts remain version 1.0.0.

@@ -26,6 +26,8 @@ Date: 2026-11-16
   managed tabs, including shells.
 - Back returns from a category to the main category menu.
 - Canonical source/working files now live in the local GitHub checkout.
+- The updater checks its own source first, installs and reboots if changed,
+  then updates the remaining scripts on the next startup.
 - Previous backup-folder changes are included: backups/ is excluded from
   discovery, and updater/station backups are stored there.
 
@@ -37,7 +39,7 @@ Date: 2026-11-16
 | gear_ui.lua | 1.0.1 |
 | station_setup.lua | 1.0.2 |
 | scan.lua | 1.0.1 |
-| update.lua | 1.0.5 |
+| update.lua | 1.0.6 |
 | cast_check.lua | 1.0.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |

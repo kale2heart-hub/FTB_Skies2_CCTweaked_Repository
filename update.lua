@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.5","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Download and validate all scripts from one GitHub commit. Running programs keep their loaded code until restarted.","refreshAfterExit":true,"category":"Tools"}
+-- @crafting-center {"version":"1.0.6","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Check the updater first; install and reboot if changed, otherwise update the remaining scripts from one GitHub commit.","refreshAfterExit":true,"category":"Tools"}
 -- Public GitHub updater. Queue, station bindings and job state are untouched.
 local OWNER="kale2heart-hub"
 local REPOSITORY="FTB_Skies2_CCTweaked_Repository"
@@ -18,7 +18,7 @@ end
 local function get(url,json)
     if not http then error("HTTP is disabled on this computer.",0) end
     local response,err,failed=http.get(url,{
-        ["User-Agent"]="CraftingCenterUpdater/1.0.5",
+        ["User-Agent"]="CraftingCenterUpdater/1.0.6",
         ["Accept"]=json and "application/vnd.github+json" or "text/plain",
     })
     if not response then
@@ -58,26 +58,16 @@ local function rollback()
     end
     return errors
 end
-local function update()
-    print("GitHub: "..OWNER.."/"..REPOSITORY.." ("..BRANCH..")")
-    local api="https://api.github.com/repos/"..OWNER.."/"..REPOSITORY.."/commits/"..BRANCH
-    local revision=textutils.unserializeJSON(get(api,true))
-    local sha=type(revision)=="table" and revision.sha
-    if type(sha)~="string" or #sha~=40 or sha:find("[^%da-fA-F]") then error("GitHub did not return a valid commit",0) end
-    print("Revision: "..sha:sub(1,12))
-    local base="https://raw.githubusercontent.com/"..OWNER.."/"..REPOSITORY.."/"..sha.."/"
-    if SCRIPT_DIRECTORY~="" then base=base..SCRIPT_DIRECTORY.."/" end
-    -- Download and compile EVERY file before replacing any installed script.
-    for _,name in ipairs(files) do
-        print("Downloading "..name)
-        local content=get(base..name,false)
-        versions[name]=metadataVersion(content,name)
-        local temp=fs.combine(root,name..".download")
-        if fs.exists(temp) then fs.delete(temp) end
-        local f=assert(fs.open(temp,"w")); f.write(content); f.close()
-        local chunk,err=loadfile(temp)
-        if not chunk then error("Invalid Lua in "..name..": "..tostring(err),0) end
-    end
+local function normalized(text) return text:gsub("\r\n","\n"):gsub("\r","\n") end
+local function stage(name,content)
+    versions[name]=metadataVersion(content,name)
+    local temp=fs.combine(root,name..".download")
+    if fs.exists(temp) then fs.delete(temp) end
+    local f=assert(fs.open(temp,"w")); f.write(content); f.close()
+    local chunk,err=loadfile(temp)
+    if not chunk then error("Invalid Lua in "..name..": "..tostring(err),0) end
+end
+local function install(names)
     -- Move legacy app backups out of the script folder, preserving collisions.
     fs.makeDir(backupRoot)
     local legacyNames={"gear_stations.txt"}
@@ -94,7 +84,7 @@ local function update()
         end
     end
     -- Prepare all backups while the original installed files remain intact.
-    for _,name in ipairs(files) do
+    for _,name in ipairs(names) do
         local entry={name=name,path=fs.combine(root,name),backup=fs.combine(backupRoot,name..".bak")}
         entry.hadOriginal=fs.exists(entry.path)
         transactions[#transactions+1]=entry
@@ -103,13 +93,54 @@ local function update()
             fs.copy(entry.path,entry.backup)
         end
     end
-    -- The updater is last in this ordered list. Its current chunk keeps running.
+    -- Install only the files belonging to this phase.
     for _,entry in ipairs(transactions) do
         entry.touched=true
         if fs.exists(entry.path) then fs.delete(entry.path) end
         fs.move(entry.path..".download",entry.path)
         print("Updated "..entry.name.." | v"..versions[entry.name])
     end
+end
+local function update()
+    print("GitHub: "..OWNER.."/"..REPOSITORY.." ("..BRANCH..")")
+    local api="https://api.github.com/repos/"..OWNER.."/"..REPOSITORY.."/commits/"..BRANCH
+    local revision=textutils.unserializeJSON(get(api,true))
+    local sha=type(revision)=="table" and revision.sha
+    if type(sha)~="string" or #sha~=40 or sha:find("[^%da-fA-F]") then error("GitHub did not return a valid commit",0) end
+    print("Revision: "..sha:sub(1,12))
+    local base="https://raw.githubusercontent.com/"..OWNER.."/"..REPOSITORY.."/"..sha.."/"
+    if SCRIPT_DIRECTORY~="" then base=base..SCRIPT_DIRECTORY.."/" end
+    print("Checking update.lua first...")
+    local latest=get(base.."update.lua",false)
+    versions["update.lua"]=metadataVersion(latest,"update.lua")
+    local installed=""
+    local updaterPath=fs.combine(root,"update.lua")
+    if fs.exists(updaterPath) then
+        local f=assert(fs.open(updaterPath,"r")); installed=f.readAll(); f.close()
+    end
+    if normalized(installed)~=normalized(latest) then
+        stage("update.lua",latest)
+        local firstPhase={"update.lua"}
+        -- Fresh root-folder installations need the boot entry before rebooting.
+        if not fs.exists(fs.combine(root,"startup.lua")) then
+            print("Installing the startup entry for the next boot...")
+            stage("startup.lua",get(base.."startup.lua",false))
+            firstPhase[#firstPhase+1]="startup.lua"
+        end
+        install(firstPhase)
+        print("New updater installed. Other scripts will update after reboot.")
+        return "reboot"
+    end
+    print("Updater unchanged; checking remaining scripts...")
+    local remaining={}
+    for _,name in ipairs(files) do
+        if name~="update.lua" then
+            print("Downloading "..name)
+            stage(name,get(base..name,false))
+            remaining[#remaining+1]=name
+        end
+    end
+    install(remaining)
     local ok=pcall(function()
         local f=assert(fs.open(fs.combine(root,"installed_revision.txt"),"w"))
         f.write(textutils.serialize({repository=OWNER.."/"..REPOSITORY,branch=BRANCH,
@@ -135,3 +166,10 @@ if not ok then
 end
 local cleaned,cleanupError=pcall(cleanup)
 if not cleaned then printError("Temporary-file cleanup failed: "..tostring(cleanupError)) end
+
+if ok and err=="reboot" then
+    if not cleaned then printError("Updater installed, but cleanup failed; reboot cancelled."); return end
+    print("Rebooting to run the new updater...")
+    sleep(1)
+    os.reboot()
+end

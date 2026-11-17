@@ -44,8 +44,10 @@ folder. Start `control_center` afterwards. It requires an Advanced Computer.
 
 Each update resolves main to a commit first and downloads all files at that
 same commit. It validates Lua and version metadata before changing installed
-files, backs up all existing scripts, replaces update.lua last and attempts to
-restore previous files if installation fails. It writes installed_revision.txt
+files. It checks update.lua first; a changed updater is backed up and installed,
+then the computer reboots so startup can continue with the new updater. If it is
+unchanged, the remaining scripts are validated and installed with backups and
+rollback on failure. It writes installed_revision.txt
 with the commit and file versions. API/download failures leave installed code
 unchanged. Downloads use public GitHub access, without a token in Minecraft.
 
