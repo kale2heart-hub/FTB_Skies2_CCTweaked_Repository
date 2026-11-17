@@ -1,9 +1,10 @@
--- @crafting-center {"version":"1.2.4","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.3.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Crafting Center UI: dedicated Other casting queue; equipment remains demo.
 local ROOT = fs.getDir(shell.getRunningProgram())
 local C = dofile(fs.combine(ROOT, "gear_config.lua"))
 local Cast=dofile(fs.combine(ROOT,"cast_tracking.lua"))(ROOT,C)
+local recoverCasting=dofile(fs.combine(ROOT,"casting_recovery.lua"))
 local categories = {"Weapon", "Armor", "Tool", "Accessory", "Extra"}
 local catalog = {
   -- Blades, blunt weapons, polearms, then ranged weapons.
@@ -192,7 +193,12 @@ end
 local function castProblem(item,category,selected)
  local needed={}
  if category=="Other" then
-  if item~="Block" then needed[item]=true end -- Basin blocks do not use a cast.
+  if item=="Block" then
+   local basin=castReport and castReport.casts.Block
+   if basin and basin.tableError then return "TableError at "..Cast.location(basin.station).."; inspect basin then Clear Errors",colors.red end
+   return nil -- Basin blocks do not require a cast, but still respect TableError.
+  end
+  needed[item]=true
  else
   for _,p in ipairs(recipe(item,category).parts) do
    local chosen=selected and selected[p.name]
@@ -210,6 +216,7 @@ local function castProblem(item,category,selected)
   local entry=castReport and castReport.casts[role]
   if not entry then return castReportError or "Checking cast stock...",colors.orange end
   local status=entry.status
+  if status=="table_error" or entry.tableError then return "TableError: wrong cast at "..Cast.location(target).."; replace cast then Clear Errors",colors.red end
   if status=="pending" or status=="suspect" then return "Inspect cast: "..Cast.location(target),colors.orange end
   local installed=status=="installed" or status=="verified"
   if not installed and (not entry or entry.available~=true) then
@@ -609,7 +616,7 @@ local function render()
     m.setBackgroundColor(colors.black); m.setTextColor(colors.white); m.clear()
     local ox,oy=math.floor((d.w-W)/2),math.max(0,d.h-(C.bottomMargin or 9)-H)
     local function line(y,label,bg,fg)
-      m.setBackgroundColor(bg or colors.black); m.setTextColor(fg or colors.white)
+      m.setBackgroundColor((y==1 and (Q.paused or S.screen=="castIssue")) and colors.red or bg or colors.black); m.setTextColor(fg or colors.white)
       m.setCursorPos(ox+1,oy+y)
       label=label:sub(1,W)
       m.write(y==1 and centered(label,W) or (label..string.rep(" ",W-#label)))
@@ -647,7 +654,7 @@ local function render()
       S.part=active
       local function text(x,y,width,label,bg,fg)
         label=label:sub(1,width)
-        m.setBackgroundColor(bg or colors.black); m.setTextColor(fg or colors.white)
+        m.setBackgroundColor((y==1 and (Q.paused or S.screen=="castIssue")) and colors.red or bg or colors.black); m.setTextColor(fg or colors.white)
         m.setCursorPos(ox+x,oy+y); m.write(centered(label,width))
       end
       line(1,liveCastRoute() and ("LIVE | "..S.item.." Casting") or liveFluidMenu() and "PREVIEW | Live Molten Materials" or C.demoMode and "DEMO | Sample stock & recipes" or "SILENT GEAR | Parts Builder",colors.blue)
@@ -714,7 +721,7 @@ local function render()
       local right=W-rightX+1
       local function text(x,y,width,label,bg,fg)
         label=label:sub(1,width)
-        m.setBackgroundColor(bg or colors.black); m.setTextColor(fg or colors.white)
+        m.setBackgroundColor((y==1 and (Q.paused or S.screen=="castIssue")) and colors.red or bg or colors.black); m.setTextColor(fg or colors.white)
         m.setCursorPos(ox+x,oy+y); m.write(centered(label,width))
       end
       line(1,liveCastRoute() and ("LIVE | "..S.item.." Casting") or liveFluidMenu() and "PREVIEW | Live Molten Materials" or C.demoMode and "DEMO | Sample stock & recipes" or "SILENT GEAR | Parts Builder",colors.blue)
@@ -821,6 +828,66 @@ startLiveCast=function()
   S.quantity=1
   os.queueEvent("gear_cast_start")
 end
+local function finishCastOutput(batch,journal,item)
+  local target,output=journal.table,journal.outputChest
+  local matches,actual,label,shapeMatch=Cast.outputInfo(batch.shape,target,item,batch.material,batch.outputs)
+  local wrongCast=not shapeMatch
+  if not matches and not wrongCast then Cast.checkOutput(batch.shape,target,item,batch.material,batch.outputs) end
+  local mismatch="Wrong cast at "..Cast.location(target)..": installed "..actual.." Cast; expected "..batch.shape.." Cast."
+  if wrongCast then
+    Cast.setTableError(batch.shape,target,actual,mismatch)
+    journal.wrongCast=actual
+  else
+    for _,tank in pairs(castCall(target,"tanks")) do
+      if (tank.amount or 0)>0 then error("Output ready but fluid remains at "..Cast.location(target).."; inspect before collection",0) end
+    end
+    Cast.checkOutput(batch.shape,target,item,batch.material,batch.outputs)
+  end
+  if journal.actualOutput and journal.actualOutput~=item.name then error("Output changed at "..Cast.location(target),0) end
+  journal.actualOutput=item.name
+  journal.status=wrongCast and "wrong_output_delivery_started" or "delivery_started";writeJob(journal)
+  local moved=castCall(target,"pushItems",output,1,1)
+  if moved==0 then
+    if wrongCast then error(mismatch.." Unexpected output could not be delivered; check output chest.",0) end
+    return false
+  end
+  if moved~=1 then error("Uncertain item delivery at "..Cast.location(target).."; inspect before retrying",0) end
+  journal.output=item.name
+  journal.status=wrongCast and "wrong_output_delivered" or "done";writeJob(journal)
+  readCastReport(true)
+  if wrongCast then
+    local entry=castReport and castReport.casts[batch.shape]
+    local spare=entry and entry.available
+    local stockMessage=not castReport and ("Cast chest unavailable: "..tostring(castReportError)) or
+      (spare and "Correct spare cast available; remove wrong cast, then Clear Errors." or "Missing cast: add a "..batch.shape.." Cast, replace wrong cast, then Clear Errors.")
+    error(mismatch.." Unexpected item delivered. TableError enabled. "..stockMessage,0)
+  end
+  return true
+end
+local function recoverQueuedOutput(batch,journal)
+  local sources,seen={},{}
+  for _,source in ipairs(C.fluidStores or {}) do if not seen[source] then seen[source]=true;sources[#sources+1]=source end end
+  local item=recoverCasting(batch,journal,{
+    call=castCall,save=writeJob,sources=sources,location=Cast.location,sleep=sleep,
+    phase=function(label)
+      S.job={phase="delivery",progress=1,label=label};os.queueEvent("gear_job_update")
+    end,
+  })
+  if not finishCastOutput(batch,journal,item) then error("Output blocked at "..Cast.location(journal.table),0) end
+  return true
+end
+local function clearTableErrors()
+  if S.busy then S.message="Wait for the current operation to stop";return end
+  local count=Cast.clearTableErrors()
+  local old=previousJob()
+  if Q.active and old and old.queueToken==Q.token and old.status=="wrong_output_delivered" then
+    old.status="not_started";writeJob(old)
+    Q.active=false;Q.pendingFluid=false;Q.token=nil;saveQueue()
+  end
+  readCastReport(true)
+  S.message="Cleared "..count.." TableError states. Resume after fixing casts."
+  S.castIssue=S.message
+end
 local function resumeQueue()
   if S.busy then return end
   readCastReport(true)
@@ -852,21 +919,17 @@ local function resumeQueue()
       end
       S.busy=true
       local ok,delivered=pcall(function()
-        local tableName=old.table
-        local item=castCall(tableName,"list")[1]
-        if not item then return false end
-        Cast.checkOutput(batch.shape,tableName,item,batch.material,batch.outputs)
-        if old.actualOutput and old.actualOutput~=item.name then error("Output changed during recovery",0) end
-        old.actualOutput=item.name
-        old.status="delivery_started"; writeJob(old)
-        local moved=castCall(tableName,"pushItems",old.outputChest,1,1)
-        if moved==0 then return false end
-        if moved~=1 then error("Unexpected delivery result",0) end
-        old.status="done"; old.output=item.name; writeJob(old)
-        return true
+        if old.status=="wrong_output_delivered" then error("Wrong output already delivered. Replace wrong cast, then Clear Errors before Resume.",0) end
+        if old.status:match("^recovery_") then return recoverQueuedOutput(batch,old) end
+        local item=castCall(old.table,"list")[1]
+        if not item then return recoverQueuedOutput(batch,old) end
+        return finishCastOutput(batch,old,item)
       end)
       S.busy=false
-      if not ok then printError(delivered); S.message=tostring(delivered); return end
+      if not ok then
+        Q.paused=true;Q.reason=tostring(delivered);saveQueue();readCastReport(true)
+        printError(delivered);S.message=tostring(delivered);S.issueReturn="queue";S.castIssue=S.message;go("castIssue");return
+      end
       if not delivered then S.message="Still cooling or output blocked; Resume retries delivery only"; return end
     end
     advanceQueue() -- Matching completed/recovered delivery counts exactly once.
@@ -883,7 +946,7 @@ drawJob=function()
   if j and j.phase=="completed" and elapsed>=4 then S.job=nil; j=nil end
   if S.screen=="welcome" then return end
   for _,d in ipairs(displays) do
-    d.mon.setBackgroundColor(colors.blue)
+    d.mon.setBackgroundColor((Q.paused or S.screen=="castIssue") and colors.red or colors.blue)
     d.mon.setCursorPos(math.floor((d.w-W)/2)+1,d.h); d.mon.write(string.rep(" ",W))
   end
   if S.screen=="main" then return end
@@ -1009,32 +1072,24 @@ local function castWorker()
       sleep(batch.coolSeconds)
       S.job={phase="delivery",progress=1,label="Cooling finished - delivering"}
       os.queueEvent("gear_job_update")
-      local deadline=os.clock()+batch.deliverySeconds
+      local deadline=os.clock()+5
+      local complete=false
       repeat
         local item=castCall(tableName,"list")[1]
-        if item then
-          Cast.checkOutput(batch.shape,tableName,item,batch.material,batch.outputs)
-          if journal.actualOutput and journal.actualOutput~=item.name then error("Output changed during delivery",0) end
-          journal.actualOutput=item.name
-          journal.status="delivery_started"; writeJob(journal)
-          local count=castCall(tableName,"pushItems",output,1,1)
-          if count==1 then
-            journal.status="done"; journal.output=item.name; writeJob(journal)
-            advanceQueue()
-            S.busy=false
-            S.job={phase="completed",progress=1,label="Completed",completedAt=os.clock()}
-            os.queueEvent("gear_job_update")
-            if #Q.batches>0 then sleep(0.5) end
-            return
-          elseif count~=0 then error("Unexpected transfer result",0) end
-        end
+        if item and finishCastOutput(batch,journal,item) then complete=true;break end
         sleep(0.5)
       until os.clock()>=deadline
-      if not castCall(tableName,"list")[1] then
-        if batch.shape~="Block" then Cast.record(batch.shape,tableName,"suspect","No output after casting timeout; cast may be removed") end
-        error("No output at "..Cast.location(tableName).."; check missing/removed cast or recipe. No new fluid sent.",0)
+      if not complete then
+        journal.status="recovery_query";writeJob(journal)
+        complete=recoverQueuedOutput(batch,journal)
       end
-      error("Output blocked at "..Cast.location(tableName),0)
+      if complete then
+        advanceQueue()
+        S.busy=false
+        S.job={phase="completed",progress=1,label="Completed",completedAt=os.clock()}
+        os.queueEvent("gear_job_update")
+        if #Q.batches>0 then sleep(0.5) end
+      end
     end)
     if not ok then
       local batch=Q.batches[1]
@@ -1210,7 +1265,7 @@ local function renderSpecial()
     local ox=math.floor((d.w-W)/2)
     local oy=math.max(0,d.h-(C.bottomMargin or 9)-H)
     local function text(y,label,bg)
-      m.setBackgroundColor(bg or colors.black); m.setTextColor(colors.white)
+      m.setBackgroundColor((y==1 and (Q.paused or S.screen=="castIssue")) and colors.red or bg or colors.black); m.setTextColor(colors.white)
       m.setCursorPos(ox+1,oy+y); m.write(centered(label,W))
     end
     local function button(x,y,width,label,action,bg)
@@ -1228,11 +1283,13 @@ local function renderSpecial()
       button(start+half+2,8,menuWidth-half-2,"Tool Parts",function() openSection("parts") end)
       button(start,11,menuWidth,"Other",function() openSection("other") end)
     elseif S.screen=="castIssue" then
-      text(1,"CAST AVAILABILITY",colors.blue)
+      text(1,"ERROR REPORT",colors.red)
       button(1,3,math.floor(W*.43),"<< Back",function() go(S.issueReturn or "item") end,colors.gray)
       local lines=wrapWords(S.castIssue or "Cast check needed",W-2)
       for i,line in ipairs(lines) do if 6+i<H-5 then text(6+i,line) end end
-      text(H-4,"Check casts and Station Setup")
+      text(H-4,"Replace wrong casts before Clear Errors")
+      local rightX=math.floor(W*.43)+3
+      button(rightX,H-1,W-rightX+1,"Clear Errors",clearTableErrors,colors.red)
       text(H-2,"Chest stock + recorded installation")
     elseif S.screen=="sectionItems" or S.screen=="category" or S.screen=="item" then
       local gearCategories=S.screen=="category"
@@ -1408,7 +1465,7 @@ render=function()
           d.mon.setCursorPos(ox+1,oy+2); d.mon.write(centered((S.section=="parts" and "Tool Parts" or S.category or "").." > "..S.item,W))
         end
       end
-      if Q.paused and S.screen~="welcome" and S.screen~="queue" then
+      if Q.paused and S.screen=="castIssue" then
         local width=math.floor(W*.43)
         -- Overwrite Reset while paused, retaining all other footer controls.
         local y=oy+H-1

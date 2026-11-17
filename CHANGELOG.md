@@ -36,12 +36,13 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.1.0 |
-| gear_ui.lua | 1.2.4 |
-| station_setup.lua | 1.2.0 |
+| gear_ui.lua | 1.3.0 |
+| station_setup.lua | 1.2.1 |
 | scan.lua | 1.0.1 |
-| update.lua | 1.0.7 |
-| cast_check.lua | 1.2.0 |
-| cast_tracking.lua | 1.0.2 |
+| update.lua | 1.0.8 |
+| cast_check.lua | 1.2.1 |
+| cast_tracking.lua | 1.1.0 |
+| casting_recovery.lua | 1.0.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
 | gear_config.lua | 1.0.0 |
@@ -116,3 +117,24 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Monitor rendering composes in memory, then sends only changed rows with blit.
 - Unchanged rows/palette values are not sent again. Intermediate clears, cursor moves and style changes stay local.
 - The UI flushes each finished frame after event handling, including welcome/pulse updates; all monitor flushes run concurrently.
+
+### Error screen presentation (Gear UI 1.2.5)
+- Resume Queue is restricted to Queue and Error Report screens.
+- Cast Availability is now titled Error Report.
+- Headers and footers turn red while the queue is paused or an error report is open; Welcome remains unchanged.
+
+## 1.3.0 - Bounded casting recovery (Unreleased)
+
+- After five seconds in item transfer, query table contents and recover with 100 mB
+  of the fluid actually present, waiting three seconds between attempts.
+- Not Enough Fluid stops immediately; Resume re-queries the table before another
+  attempt. Attempts persist across resumes, with a 20-top-up / 90-second bound.
+- Wrong-type outputs are delivered once and reported with actual/expected cast
+  and physical table location. The requested unit stays queued for a later retry.
+- Wrong casts alone set persistent TableError, mark installation missing, and
+  disable new queues for that table and dependent equipment. Chest stock still
+  records spare casts. Missing spares are reported separately.
+- Clear Errors on Error Report clears all TableError flags after manual correction.
+- Partial/uncertain recovery pours, rejected transfers, mixed/changed fluids,
+  blocked output, and remaining fluid stop recovery for inspection.
+- Added casting_recovery.lua v1.0.0; updater v1.0.8 includes it automatically.

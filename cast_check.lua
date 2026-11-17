@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"cast_check","title":"Check Cast Chest","category":"Tools","args":[],"description":"Read the cast chest and show found, missing and unidentified casts against the 40-cast plan.","dependencies":["cast_tracking.lua","gear_config.lua"]}
+-- @crafting-center {"version":"1.2.1","suite":"crafting-center","id":"cast_check","title":"Check Cast Chest","category":"Tools","args":[],"description":"Read the cast chest and show found, missing and unidentified casts against the 40-cast plan.","dependencies":["cast_tracking.lua","gear_config.lua"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local configPath=fs.combine(ROOT,"gear_config.lua")
 local C=fs.exists(configPath) and dofile(configPath) or {}
@@ -62,7 +62,7 @@ local function saveAvailability()
   local status,target,record=installation(role)
   report.casts[role]={available=scanError==nil and found[role]~=nil,
    quantity=found[role] and found[role].quantity or 0,
-   installed=status=="installed" or status=="verified",status=status,station=target,record=record}
+   installed=status=="installed" or status=="verified",status=status,station=target,record=record,tableError=record and record.tableError or false}
  end
  local ok,err=pcall(function()
   local f=assert(fs.open(REPORT,"w")); f.write(textutils.serialize(report)); f.close()

@@ -129,3 +129,9 @@ builds; individual script metadata versions identify smaller file changes.
 
 The updater and Station Setup use backups/ for .bak files, and discovery skips
 that folder. Current source files are maintained in the local GitHub checkout.
+
+Casting recovery adds the non-launchable casting_recovery.lua helper (v1.0.0),
+listed in Gear UI dependencies and the updater. cast_installations.txt now also
+persists tableError and actualCast per physical table. The casting job journal
+records recovery attempts, matching fluid, each top-up intent/result, and delivery
+of unexpected output; these are local state and are not replaced by updates.

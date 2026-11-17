@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.2","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
 return function(root,C)
  local T={}
  local statePath=fs.combine(root,"cast_installations.txt")
@@ -42,9 +42,7 @@ return function(root,C)
   assert(type(state)=="table","Unreadable cast_installations.txt; inspect records")
   return state
  end
- function T.record(role,target,status,reason)
-  local state=readState()
-  state[target]={role=role,status=status,reason=reason,updatedAt=os.epoch("utc")}
+ local function saveState(state)
   -- Preserve previous state if writing is interrupted.
   local temp=statePath..".download"
   local f=assert(fs.open(temp,"w"));f.write(textutils.serialize(state));f.close()
@@ -55,11 +53,30 @@ return function(root,C)
    fs.copy(statePath,backup);fs.delete(statePath)
   end
   fs.move(temp,statePath)
+ end
+ function T.record(role,target,status,reason)
+  local state=readState();local previous=state[target]
+  state[target]={role=role,status=status,reason=reason,updatedAt=os.epoch("utc"),
+   tableError=previous and previous.tableError or false,actualCast=previous and previous.actualCast}
+  saveState(state)
   if status=="installed" or status=="missing" or status=="suspect" then T.refreshAvailability() end
   os.queueEvent("gear_cast_availability")
  end
+ function T.setTableError(role,target,actual,reason)
+  local state=readState()
+  state[target]={role=role,status="missing",tableError=true,actualCast=actual,reason=reason,updatedAt=os.epoch("utc")}
+  saveState(state);T.refreshAvailability();os.queueEvent("gear_cast_availability")
+ end
+ function T.clearTableErrors()
+  local state=readState();local count=0
+  for _,entry in pairs(state) do
+   if entry.tableError then entry.tableError=false;entry.actualCast=nil;count=count+1 end
+  end
+  saveState(state);T.refreshAvailability();os.queueEvent("gear_cast_availability");return count
+ end
  function T.status(role,target)
   local entry=readState()[target]
+  if entry and entry.tableError then return "table_error",entry end
   if entry and entry.role~=role and entry.status~="missing" then return "suspect",entry end
   return entry and entry.role==role and entry.status or "missing",entry
  end
@@ -117,10 +134,16 @@ return function(root,C)
    local entry=target and state[target]
    local status=entry and entry.role==role and entry.status or "missing"
    if entry and entry.role~=role and entry.status~="missing" then status="suspect" end
+   if entry and entry.tableError then status="table_error" end
    local stock=found[role]
    report.casts[role]={available=ok and stock~=nil,quantity=stock and stock.quantity or 0,
-    installed=status=="installed" or status=="verified",status=status,station=target,record=entry}
+    installed=status=="installed" or status=="verified",status=status,station=target,record=entry,tableError=entry and entry.tableError or false}
   end
+  local basin=bindings.Block and bindings.Block.peripheral
+  local basinRecord=basin and state[basin]
+  report.casts.Block={available=true,quantity=0,installed=false,station=basin,
+    tableError=basinRecord and basinRecord.tableError or false,
+    status=basinRecord and basinRecord.tableError and "table_error" or "missing",record=basinRecord}
   local written,err=pcall(function()
    local path=fs.combine(root,"cast_availability.txt")
    local temp=path..".download"
@@ -135,6 +158,7 @@ return function(root,C)
   if role=="Block" then return end
   local status=T.status(role,target)
   if status=="installed" or status=="verified" then return end
+  if status=="table_error" then error("TableError: wrong cast at "..T.location(target).."; replace cast and Clear Errors",0) end
   if status=="pending" or status=="suspect" then error("Inspect cast at "..T.location(target).."; mark removed or installed in Station Setup",0) end
   local source=C.castChest or "sophisticatedstorage:chest_1"
   if source==target then error("Cast source equals destination",0) end
@@ -156,8 +180,8 @@ return function(root,C)
   if moved~=1 then error("Uncertain cast transfer at "..T.location(target),0) end
   T.record(role,target,"installed","One cast transferred; awaiting output verification")
  end
- function T.checkOutput(role,target,item,material,outputs)
-  if not item then return false end
+ function T.outputInfo(role,target,item,material,outputs)
+  if not item then return false,"Unknown","",false end
   local function contains(value,needle)
    local hay=" "..words(value):gsub("%s+"," ").." "
    local term=words(needle):gsub("%s+"," ")
@@ -165,12 +189,31 @@ return function(root,C)
   end
   local ok,detail=pcall(peripheral.call,target,"getItemDetail",1)
   local label=ok and type(detail)=="table" and detail.displayName or ""
-  local match=contains(item.name,role) or contains(label,role)
+  local detected={};for _,candidate in ipairs(roles) do detected[#detected+1]=candidate end
+  detected[#detected+1]="Block"
+  table.sort(detected,function(a,b) return #a>#b end)
+  local actual
+  for _,candidate in ipairs(detected) do
+   if contains(item.name,candidate) or contains(label,candidate) then actual=candidate;break end
+  end
+  if not actual then
+   for _,gem in ipairs({"Diamond","Emerald","Amethyst","Lapis","Quartz","Fluxite","Ender"}) do
+    if contains(item.name,gem) or contains(label,gem) then actual="Gem";break end
+   end
+  end
+  local shapeMatch=contains(item.name,role) or contains(label,role)
+  if actual and actual~=role then shapeMatch=false end
+  local match=shapeMatch
   -- Gems use their material name (Diamond), rather than the word Gem.
-  if role=="Gem" then match=material and (contains(item.name,material) or contains(label,material)) end
+  if role=="Gem" and (not actual or actual=="Gem") then shapeMatch=true;actual="Gem";match=material and (contains(item.name,material) or contains(label,material)) end
   local idsOK=not outputs or #outputs==0
   for _,id in ipairs(outputs or {}) do if item.name==id then idsOK=true end end
-  if not match or not idsOK then
+  return match and idsOK,actual or (shapeMatch and role or (label~="" and label or item.name)),label,shapeMatch
+ end
+ function T.checkOutput(role,target,item,material,outputs)
+  if not item then return false end
+  local match,actual,label=T.outputInfo(role,target,item,material,outputs)
+  if not match then
    if role~="Block" then T.record(role,target,"suspect","Wrong output: "..item.name.." / "..label) end
    error("Wrong output at "..T.location(target)..": expected "..role..", found "..item.name.." ("..label.."). Check installed cast.",0)
   end

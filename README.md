@@ -144,3 +144,26 @@ avoid detail queries; NBT-specific names are cached for 30 seconds.
 Gear UI 1.2.4 buffers monitor drawing locally and sends only changed rows after
 composing each frame. This reduces wired-modem calls when opening menus and
 avoids transmitting intermediate clears and per-button style/cursor operations.
+
+## Bounded casting recovery (1.3.0)
+
+After five seconds in item transfer, Gear UI queries the table and attempts
+100 mB top-ups of the matching fluid, waiting three seconds after each. Insufficient
+stock reports Not Enough Fluid and stops; Resume queries the table again. Limits
+are 20 top-ups (2,000 mB) per unit and 90 seconds per run. Restocking after an
+insufficient-fluid pause resets the run time, but never the top-up count.
+
+A completed output ends top-ups. This matters because 100 mB increments cannot
+always exactly empty a wrong cast's recipe (for example 90 + 100n cannot be an
+exact multiple of 360). Remaining fluid requires inspection rather than further
+blind pours. Partial/uncertain transfers also stop, and are journalled before
+sending fluid so restarting cannot silently repeat them.
+
+Wrong-cast output is delivered once to the output chest, the requested unit
+remains queued, and the table is marked TableError with its installation missing.
+New jobs using that table, including dependent equipment, are blocked. Stock is
+rescanned and the error reports the actual/expected cast, physical table location,
+and whether a correct spare is available. Other errors do not set TableError.
+Replace/remove the wrong cast and inspect any remaining fluid, then use Clear
+Errors in Error Report. This clears all table flags; it does not physically remove
+casts or drain fluid. Resume can then install a spare and retry the requested unit.
