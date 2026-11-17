@@ -135,3 +135,8 @@ listed in Gear UI dependencies and the updater. cast_installations.txt now also
 persists tableError and actualCast per physical table. The casting job journal
 records recovery attempts, matching fluid, each top-up intent/result, and delivery
 of unexpected output; these are local state and are not replaced by updates.
+
+Control Center 1.2.0's Text Files section is separate from runnable-script metadata.
+It discovers local .txt paths without executing them, including reports/backups.
+Text contents are cached on open and refreshed only with R; selection never
+launches a script or alters the selected file.

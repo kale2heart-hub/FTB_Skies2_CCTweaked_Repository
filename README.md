@@ -181,3 +181,10 @@ backup-only recovery marks installations for verification in Station Setup while
 preserving TableError and pending transfers. The next successful save repairs the
 primary record. Corrupt originals are retained. If no valid copy exists, records
 are not silently discarded.
+
+Control Center 1.2.0 adds Text Files beside Applications, Console Scripts and Tools.
+It lists local .txt files alphabetically, including reports, requests and backups.
+Enter reads a selected file inside Control Center. Up/Down, PageUp/PageDown and
+mouse wheel scroll; B returns; R reloads the file or refreshes the file list.
+The reader never executes or edits file contents. Q retains its existing meaning:
+it closes Control Center and all its managed programs.

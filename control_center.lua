@@ -1,10 +1,10 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"control_center","title":"Control Center","launchable":false,"description":"Categorized program launcher, managed shells and script version registry."}
+-- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"control_center","title":"Control Center","launchable":false,"description":"Categorized launcher, managed shells, script versions and a built-in text-file reader."}
 -- Crafting Center console launcher. All launches use fg/separate tabs.
 -- Q or Ctrl+T here closes all Control-Center-managed child programs.
 local SELF=fs.combine(shell.getRunningProgram(),""):gsub("^/+","")
 local ROOT=fs.combine(fs.getDir(SELF),""):gsub("^/+","")
 local argv={...}
-local CATEGORIES={"Applications","Console Scripts","Tools"}
+local CATEGORIES={"Applications","Console Scripts","Tools","Text Files"}
 local VALID_CATEGORY={Applications=true,["Console Scripts"]=true,Tools=true}
 local SHELL_ID="__crafting_shell"
 local programs,byId,registryFiles,filesByName={},{},{},{}
@@ -12,6 +12,25 @@ local registryWarnings={}
 local registryWriteError
 local installationFingerprint=""
 local REGISTRY=fs.combine(ROOT,"control_registry.txt")
+local textFiles={}
+local function scanTextFiles()
+  textFiles={}
+  local function visit(dir,depth)
+    if depth>6 then return end
+    local ok,names=pcall(fs.list,dir)
+    if not ok then return end
+    for _,name in ipairs(names) do
+      local path=fs.combine(dir,name)
+      if fs.isDir(path) then
+        if name~="rom" and name~=".git" then visit(path,depth+1) end
+      elseif name:lower():sub(-4)==".txt" then
+        textFiles[#textFiles+1]={path=path,file=ROOT=="" and path or path:sub(#ROOT+2)}
+      end
+    end
+  end
+  visit(ROOT,0)
+  table.sort(textFiles,function(a,b) return a.file:lower()<b.file:lower() end)
+end
 local function fingerprint(text)
   text=text:gsub("\r\n","\n"):gsub("\r","\n")
   local a,b=1,0
@@ -203,11 +222,32 @@ if argv[1]=="--child" then
 end
 
 multishell.setTitle(multishell.getCurrent(),"Control Center")
+scanTextFiles()
 local selected,offset=1,0
 local view="categories"
 local activeCategory
 local previousView
 local notice=""
+local textPath,textLines=nil,{}
+local function openTextFile(path,keepOffset)
+  textPath=path
+  if not keepOffset then offset=0 end
+  local ok,result=pcall(function()
+    local f=assert(fs.open(path,"r"),"File missing or unreadable")
+    local raw=f.read(524289) or "";f.close()
+    local truncated=#raw>524288
+    if truncated then raw=raw:sub(1,524288) end
+    raw=raw:gsub("\r\n","\n"):gsub("\r","\n")
+    local lines={}
+    for line in (raw.."\n"):gmatch("([^\n]*)\n") do
+      lines[#lines+1]=line:gsub("%c",function(c) return c=="\t" and "    " or "?" end)
+    end
+    if truncated then lines[#lines+1]="[Showing first 512 KiB of file]" end
+    return lines
+  end)
+  textLines=ok and result or {"Cannot read "..path,tostring(result),"R retries reading the file."}
+  view="text";notice=ok and "Read only | R reloads current file" or "File could not be read"
+end
 local sessions={}
 local pending
 local sessionCounter=0
@@ -217,11 +257,11 @@ local function visiblePrograms()
   return result
 end
 local function selectedProgram()
-  if view=="categories" or view=="versions" then return nil end
+  if view=="categories" or view=="versions" or view=="texts" or view=="text" then return nil end
   return activeCategory and visiblePrograms()[selected] or nil
 end
 local function listSize()
-  return view=="categories" and #CATEGORIES or #visiblePrograms()
+  return view=="categories" and #CATEGORIES or view=="texts" and #textFiles or #visiblePrograms()
 end
 local function refreshRegistry()
   local selectedEntry=selectedProgram()
@@ -344,14 +384,32 @@ local function render()
   if w<20 or h<10 then line(1,"Need terminal 20x10"); return 1 end
   local capacity=h-7
   line(1,"CONTROL CENTER | v"..loadedController.version,colors.blue)
-  line(2,view=="categories" and "Choose a category | S opens a shell" or (activeCategory or "Versions"))
+  line(2,view=="categories" and "Choose a category | S opens a shell" or view=="text" and (textPath or "Text reader") or (activeCategory or "Versions"))
   if view=="categories" then
-    line(3,"Applications / Console Scripts / Tools")
-    for index,category in ipairs(CATEGORIES) do
-      local count=0
-      for _,program in ipairs(programs) do if program.category==category then count=count+1 end end
-      line(index+3,(index==selected and "> " or "  ")..category.." ("..count..")",index==selected and colors.blue or colors.black)
+    local page=math.floor((selected-1)/capacity)
+    line(3,"Select section | Page "..(page+1).."/"..math.ceil(#CATEGORIES/capacity))
+    for row=1,capacity do
+      local index=page*capacity+row;local category=CATEGORIES[index]
+      if category then
+        local count=category=="Text Files" and #textFiles or 0
+        if category~="Text Files" then for _,program in ipairs(programs) do if program.category==category then count=count+1 end end end
+        line(row+3,(index==selected and "> " or "  ")..category.." ("..count..")",index==selected and colors.blue or colors.black)
+      end
     end
+  elseif view=="texts" then
+    selected=math.max(1,math.min(selected,math.max(1,#textFiles)))
+    local page=math.floor((selected-1)/capacity)
+    line(3,"Page "..(page+1).."/"..math.max(1,math.ceil(#textFiles/capacity)).." | "..#textFiles.." text files")
+    for row=1,capacity do
+      local index=page*capacity+row;local entry=textFiles[index]
+      if entry then line(row+3,(index==selected and "> " or "  ")..entry.file,index==selected and colors.blue or colors.black) end
+    end
+    if #textFiles==0 then line(4,"No .txt files found. R rescans.") end
+  elseif view=="text" then
+    local lines=wrapped(textLines,w)
+    offset=math.max(0,math.min(offset,math.max(0,#lines-capacity)))
+    line(3,"READ ONLY | Lines "..(offset+1).."-"..math.min(#lines,offset+capacity).."/"..#lines)
+    for row=1,capacity do line(row+3,lines[offset+row] or "") end
   elseif view=="list" then
     local visible=visiblePrograms()
     selected=math.max(1,math.min(selected,math.max(1,#visible)))
@@ -387,9 +445,9 @@ local function render()
     line(3,"Details | Lines "..(offset+1).."-"..math.min(#lines,offset+capacity).."/"..#lines)
     for row=1,capacity do line(row+3,lines[offset+row] or "") end
   end
-  line(h-3,"Arrows/pages | Enter select/run | B back")
-  line(h-2,"D details | V versions | S shell | F focus")
-  line(h-1,"R rescan | Q exits ALL managed programs")
+  line(h-3,view=="text" and "Up/Down scroll | PgUp/PgDn page | B back" or "Arrows/pages | Enter select/run | B back")
+  line(h-2,(view=="text" or view=="texts") and "Text files are read only | S shell" or "D details | V versions | S shell | F focus")
+  line(h-1,(view=="text" and "R reload" or "R rescan").." | Q exits ALL managed programs")
   line(h,notice,colors.gray)
   return capacity
 end
@@ -419,29 +477,39 @@ local function main()
       if pending and key==pending.timer then finishLaunch()
       elseif key==tick then packet("ping"); tick=os.startTimer(1) end
     elseif event=="key" then
-      local isList=view=="list" or view=="categories"
+      local isList=view=="list" or view=="categories" or view=="texts"
       if key==keys.q then return
       elseif key==keys.up then if isList then selected=math.max(1,selected-1) else offset=math.max(0,offset-1) end
       elseif key==keys.down then if isList then selected=math.max(1,math.min(listSize(),selected+1)) else offset=offset+1 end
       elseif key==keys.pageUp then if isList then selected=math.max(1,selected-capacity) else offset=math.max(0,offset-capacity) end
       elseif key==keys.pageDown then if isList then selected=math.max(1,math.min(listSize(),selected+capacity)) else offset=offset+capacity end
       elseif key==keys.enter then
-        if view=="categories" then activeCategory=CATEGORIES[selected]; view="list"; selected=1
-        elseif view~="versions" then requestLaunch(selectedProgram(),false) end
+        if view=="categories" then
+          activeCategory=CATEGORIES[selected]
+          if activeCategory=="Text Files" then scanTextFiles();view="texts" else view="list" end
+          selected=1;offset=0
+        elseif view=="texts" then
+          local entry=textFiles[selected];if entry then openTextFile(entry.path) end
+        elseif view~="versions" and view~="text" then requestLaunch(selectedProgram(),false) end
       elseif key==keys.s then requestLaunch(byId[SHELL_ID],false)
       elseif key==keys.f then requestLaunch(selectedProgram(),true)
       elseif key==keys.d and selectedProgram() and view~="categories" then view="detail"; offset=0
       elseif key==keys.v then if view~="versions" then previousView=view end; view="versions"; offset=0
       elseif key==keys.b or key==keys.backspace then
-        if view=="detail" then view="list"
+        if view=="text" then view="texts";offset=0
+        elseif view=="detail" then view="list"
         elseif view=="versions" then view=previousView or "categories"
-        elseif view=="list" then
+        elseif view=="list" or view=="texts" then
           view="categories"
           for index,category in ipairs(CATEGORIES) do if category==activeCategory then selected=index; break end end
         end
-      elseif key==keys.r then refreshRegistry() end
+      elseif key==keys.r then
+        if view=="text" and textPath then openTextFile(textPath,true)
+        elseif view=="texts" then scanTextFiles();selected=math.max(1,math.min(selected,math.max(1,#textFiles)));notice="Text file list refreshed"
+        else refreshRegistry();scanTextFiles() end
+      end
     elseif event=="mouse_scroll" then
-      if view=="list" or view=="categories" then selected=math.max(1,math.min(listSize(),selected+key)) else offset=math.max(0,offset+key) end
+      if view=="list" or view=="categories" or view=="texts" then selected=math.max(1,math.min(listSize(),selected+key)) else offset=math.max(0,offset+key) end
     end
   end
 end

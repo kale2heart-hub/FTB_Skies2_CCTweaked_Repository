@@ -35,7 +35,7 @@ Date: 2026-11-16
 
 | Script | Version |
 |---|---|
-| control_center.lua | 1.1.0 |
+| control_center.lua | 1.2.0 |
 | gear_ui.lua | 1.3.1 |
 | station_setup.lua | 1.2.1 |
 | scan.lua | 1.0.1 |
@@ -151,3 +151,10 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Saves back up a complete surviving source before reusing pending files and validate the new record before replacement.
 - In-process readers use a stable commit snapshot; readers never restore files into an active commit gap.
 - Unrecoverable/corrupt originals are retained for inspection rather than silently reset.
+
+## Control Center 1.2.0 - Text files (Unreleased)
+
+- New Text Files section discovers .txt files below the computer's script folder, including reports, requests and backups (up to six subfolder levels).
+- Enter opens a built-in read-only, wrapped text reader; arrows/pages/mouse wheel scroll, B returns, R reloads/rescans.
+- Files are read only when opened/reloaded, not on every heartbeat redraw. The reader displays up to 512 KiB with a truncation notice for larger files.
+- Small terminals page the section list so the fourth section does not overlap navigation controls.
