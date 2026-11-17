@@ -174,3 +174,10 @@ their locks. Matching outputs verify installation; empty, fluid-free tables clea
 stale locks, with unverified installation still marked missing. Hidden installed
 casts can be confirmed with I in Station Setup. No fluid is sent or item moved by
 Clear Errors. An active wrong-output job is released only if its own table passes.
+
+Cast Tracking 1.1.2 recovers interrupted installation saves automatically from a
+valid pending file or backup. A pending save retains its recorded state; older
+backup-only recovery marks installations for verification in Station Setup while
+preserving TableError and pending transfers. The next successful save repairs the
+primary record. Corrupt originals are retained. If no valid copy exists, records
+are not silently discarded.

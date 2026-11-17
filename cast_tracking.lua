@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.1.1","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
+-- @crafting-center {"version":"1.1.2","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
 return function(root,C)
  local T={}
  local statePath=fs.combine(root,"cast_installations.txt")
@@ -32,27 +32,81 @@ return function(root,C)
   end
   return tostring(target)
  end
+ local backupPath=fs.combine(root,"backups/cast_installations.txt.bak")
+ local writing,snapshot=false,nil
+ local function clone(value)
+  if type(value)~="table" then return value end
+  local result={};for key,item in pairs(value) do result[key]=clone(item) end;return result
+ end
+ local function decodeState(path)
+  if not fs.exists(path) then return nil end
+  local ok,state=pcall(function()
+   local f=assert(fs.open(path,"r"));local raw=f.readAll();f.close()
+   local value=textutils.unserialize(raw)
+   assert(type(value)=="table","Invalid installation record")
+   for target,entry in pairs(value) do
+    assert(type(target)=="string" and type(entry)=="table" and type(entry.role)=="string" and type(entry.status)=="string","Invalid installation entry")
+   end
+   return value
+  end)
+  return ok and state or nil
+ end
  local function readState()
-  if not fs.exists(statePath) then
-   assert(not fs.exists(statePath..".download") and not fs.exists(fs.combine(root,"backups/cast_installations.txt.bak")),"Cast installation record interrupted; inspect backups")
-   return {}
+  -- Readers in this instance see a complete snapshot during a commit.
+  if writing then return clone(snapshot) end
+  local primary=decodeState(statePath)
+  if primary then return primary end
+  local pending=decodeState(statePath..".download")
+  if pending then return pending end
+  local backup=decodeState(backupPath)
+  if backup then
+   -- An older backup cannot prove the current installed state. Preserve locks
+   -- and transfer uncertainty, and require verification of the other entries.
+   for _,entry in pairs(backup) do
+    if not entry.tableError and entry.status~="pending" then
+     entry.status="suspect";entry.reason="Recovered older installation backup; confirm installed/removed in Station Setup"
+    end
+   end
+   for role,station in pairs(C.castStations or {}) do
+    local target=station.peripheral
+    if target and target~="" and not backup[target] then
+     backup[target]={role=role,status="suspect",reason="Installation missing from recovered backup; verify in Station Setup"}
+    end
+   end
+   return backup
   end
-  local f=assert(fs.open(statePath,"r"));local raw=f.readAll();f.close()
-  local state=textutils.unserialize(raw)
-  assert(type(state)=="table","Unreadable cast_installations.txt; inspect records")
-  return state
+  assert(not fs.exists(statePath) and not fs.exists(statePath..".download") and not fs.exists(backupPath),
+   "No valid cast installation record could be recovered; original files retained in cast_installations.txt / .download / backups")
+  return {}
  end
  local function saveState(state)
-  -- Preserve previous state if writing is interrupted.
-  local temp=statePath..".download"
-  local f=assert(fs.open(temp,"w"));f.write(textutils.serialize(state));f.close()
-  fs.makeDir(fs.combine(root,"backups"))
-  if fs.exists(statePath) then
-   local backup=fs.combine(root,"backups/cast_installations.txt.bak")
-   if fs.exists(backup) then fs.delete(backup) end
-   fs.copy(statePath,backup);fs.delete(statePath)
-  end
-  fs.move(temp,statePath)
+  snapshot=clone(state);writing=true
+  local ok,err=pcall(function()
+   local temp=statePath..".download"
+   fs.makeDir(fs.combine(root,"backups"))
+   -- Back up the surviving complete source BEFORE reusing the pending file.
+   local primary=decodeState(statePath)
+   local prior=primary and statePath or decodeState(temp) and temp or nil
+   if prior then
+    local staging=backupPath..".download"
+    if fs.exists(staging) then fs.delete(staging) end
+    fs.copy(prior,staging)
+    if fs.exists(backupPath) then fs.delete(backupPath) end
+    fs.move(staging,backupPath)
+   end
+   if fs.exists(statePath) and not primary then
+    local archive=fs.combine(root,"backups/cast_installations.corrupt_"..os.epoch("utc")..".txt")
+    local suffix=0;local candidate=archive
+    while fs.exists(candidate) do suffix=suffix+1;candidate=archive.."."..suffix end
+    fs.copy(statePath,candidate)
+   end
+   local f=assert(fs.open(temp,"w"));f.write(textutils.serialize(state));f.close()
+   assert(decodeState(temp),"New installation save failed validation; previous files retained")
+   if fs.exists(statePath) then fs.delete(statePath) end
+   fs.move(temp,statePath)
+  end)
+  writing=false;snapshot=nil
+  if not ok then error("Could not save cast installations: "..tostring(err),0) end
  end
  function T.record(role,target,status,reason)
   local state=readState();local previous=state[target]

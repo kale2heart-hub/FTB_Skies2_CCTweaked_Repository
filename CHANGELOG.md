@@ -41,7 +41,7 @@ Date: 2026-11-16
 | scan.lua | 1.0.1 |
 | update.lua | 1.0.8 |
 | cast_check.lua | 1.2.1 |
-| cast_tracking.lua | 1.1.1 |
+| cast_tracking.lua | 1.1.2 |
 | casting_recovery.lua | 1.0.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
@@ -144,3 +144,10 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Wrong output, remaining fluid, conflicting assignments and unreadable tables stay blocked with current location/details.
 - Matching outputs verify installation. Empty, fluid-free tables clear stale locks without claiming the hidden cast is verified.
 - A wrong-output journal is released for retry only when that specific table passes revalidation.
+
+### Recover interrupted installation records (Cast Tracking 1.1.2)
+- Loads a validated primary, pending save, or backup instead of failing solely because the primary is missing.
+- Backup recovery preserves locks/uncertain transfers and requires installation verification.
+- Saves back up a complete surviving source before reusing pending files and validate the new record before replacement.
+- In-process readers use a stable commit snapshot; readers never restore files into an active commit gap.
+- Unrecoverable/corrupt originals are retained for inspection rather than silently reset.
