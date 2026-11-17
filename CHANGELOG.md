@@ -36,11 +36,12 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.1.0 |
-| gear_ui.lua | 1.2.1 |
+| gear_ui.lua | 1.2.2 |
 | station_setup.lua | 1.2.0 |
 | scan.lua | 1.0.1 |
 | update.lua | 1.0.7 |
 | cast_check.lua | 1.2.0 |
+| cast_tracking.lua | 1.0.1 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
 | gear_config.lua | 1.0.0 |
@@ -98,3 +99,10 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Paused failed jobs can be removed, with active journals archived and table contents preserved.
 - Home sits beside Back; opening the queue from an error no longer traps navigation.
 - Queue rows show pouring/cooling/transfer progress or a clickable paused-job error.
+
+### Automatic cast stock refresh (Gear UI 1.2.2, Cast Tracking 1.0.1)
+- Gear UI scans and saves cast availability at startup, on its normal stock poll,
+  after casting failures, and before Resume. Cast Checker is no longer required.
+- Successful cast installation and missing/suspect state updates refresh chest
+  quantities and installed records together, including Station Setup transfers.
+- Unreadable inventories are reported as unavailable data rather than stale stock.

@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.2.1","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.2.2","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Crafting Center UI: dedicated Other casting queue; equipment remains demo.
 local ROOT = fs.getDir(shell.getRunningProgram())
@@ -166,22 +166,17 @@ local function recipe(item,category)
     return {parts=p}
   end
 end
--- Chest audit is re-read on a short cache so the console checker can run beside UI.
+-- Live chest refresh; Cast Checker is optional for Gear UI operation.
 local castReport,castReportError,castReportAt=nil,nil,-10
-local function readCastReport()
- if os.clock()-castReportAt<1 then return end
+local function readCastReport(force)
+ if not force and os.clock()-castReportAt<math.max(1,C.pollSeconds or 3) then return end
  castReportAt=os.clock(); castReport=nil
- local ok,result=pcall(function()
-  local f=fs.open(fs.combine(ROOT,"cast_availability.txt"),"r")
-  if not f then error("Run Check Cast Chest to create the cast report",0) end
-  local raw=f.readAll(); f.close()
-  local report=textutils.unserialize(raw)
-  if type(report)~="table" or (report.schema~=1 and report.schema~=2) or type(report.casts)~="table" then error("Cast report unreadable; rescan cast chest",0) end
-  if not report.valid then error("Cast chest scan failed; rescan cast chest",0) end
-  if report.chest~=(C.castChest or "sophisticatedstorage:chest_1") then error("Cast chest changed; rescan cast chest",0) end
-  return report
- end)
- if ok then castReport=result; castReportError=nil else castReportError=tostring(result) end
+ local ok,result=pcall(Cast.refreshAvailability,castStations)
+ if ok and type(result)=="table" and result.valid then
+  castReport=result;castReportError=nil
+ else
+  castReportError=ok and type(result)=="table" and result.error or tostring(result)
+ end
 end
 local function castProblem(item,category,selected)
  local needed={}
@@ -748,6 +743,7 @@ startLiveCast=function()
 end
 local function resumeQueue()
   if S.busy then return end
+  readCastReport(true)
   local old=previousJob()
   if Q.active then
     if not old or old.queueToken~=Q.token then
@@ -966,6 +962,7 @@ local function castWorker()
       local location=batch and Cast.location(batch.station)
       err=tostring(err)
       if location and not err:find(location,1,true) then err=err.." | "..location end
+      readCastReport(true)
       printError(err)
       S.busy=false; Q.paused=true; Q.reason=err; saveQueue()
       S.job={phase="error",progress=1,label=tostring(err)}
@@ -1347,7 +1344,7 @@ render=function()
   end
   drawJob()
 end
-connect(); refreshStock(); updatePulse(); render()
+connect(); refreshStock(); readCastReport(true); updatePulse(); render()
 print("Gear UI running. All configured monitors share control.")
 print("Other casting jobs use dedicated station assignments in gear_stations.txt.")
 print("Leave each correct cast installed; do not share stations between cast types.")
@@ -1367,6 +1364,8 @@ while true do
       end
     end
     render()
+  elseif event=="gear_cast_availability" then
+    readCastReport(true); render()
   elseif event=="gear_job_update" then
     render()
   elseif event=="timer" and name==pulseTimer then
@@ -1380,9 +1379,9 @@ while true do
     updatePulse(); drawJob()
     pulseTimer=os.startTimer(0.2)
   elseif event=="timer" and name==timer then
-    refreshStock(); render(); timer=os.startTimer(C.pollSeconds)
+    refreshStock(); readCastReport(true); render(); timer=os.startTimer(C.pollSeconds)
   elseif event=="monitor_resize" or event=="peripheral" or event=="peripheral_detach" then
-    connect(); refreshStock(); updatePulse(); render()
+    connect(); refreshStock(); readCastReport(true); updatePulse(); render()
   end
 end
 end

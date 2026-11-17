@@ -128,3 +128,9 @@ unit. Cancellation archives the active journal in backups/cancelled_cast_*.txt
 and leaves table fluid/output untouched. Running casts remain protected. Home
 beside Back returns to the main menu, and queued-job status shows pouring,
 cooling or transferring with item progress. Tap a paused error for details.
+
+Gear UI 1.2.2 refreshes cast chest stock automatically at startup, every pollSeconds,
+after cast transfers/failures and before Resume. Adding a replacement cast updates
+the buttons without running Cast Checker. A failed job remains paused until Resume;
+uncertain/partial pours and wrong-output records still require inspection. Chest
+quantities and installation state are saved together in cast_availability.txt.

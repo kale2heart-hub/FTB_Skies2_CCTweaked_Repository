@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
+-- @crafting-center {"version":"1.0.1","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
 return function(root,C)
  local T={}
  local statePath=fs.combine(root,"cast_installations.txt")
@@ -55,6 +55,7 @@ return function(root,C)
    fs.copy(statePath,backup);fs.delete(statePath)
   end
   fs.move(temp,statePath)
+  if status=="installed" or status=="missing" or status=="suspect" then T.refreshAvailability() end
   os.queueEvent("gear_cast_availability")
  end
  function T.status(role,target)
@@ -68,7 +69,7 @@ return function(root,C)
  end
  function T.chest()
   local source=C.castChest or "sophisticatedstorage:chest_1"
-  local found={}
+  local found,unknown={},0
   for slot,item in pairs(peripheral.call(source,"list")) do
    local ok,detail=pcall(peripheral.call,source,"getItemDetail",slot)
    local role=T.match(item,ok and type(detail)=="table" and detail.displayName or item.name)
@@ -76,9 +77,48 @@ return function(root,C)
     found[role]=found[role] or {quantity=0,slots={}}
     found[role].quantity=found[role].quantity+item.count
     found[role].slots[#found[role].slots+1]={slot=slot,name=item.name,nbt=item.nbt}
-   end
+   else unknown=unknown+1 end
   end
-  return found
+  return found,unknown
+ end
+ function T.refreshAvailability(bindings)
+  local report={schema=2,chest=C.castChest or "sophisticatedstorage:chest_1",checkedAt=os.epoch("utc"),
+   casts={},scope="chest-and-installation-records"}
+  local ok,found,unknown=pcall(T.chest)
+  report.valid=ok; report.error=not ok and tostring(found) or nil
+  report.unknownCount=ok and unknown or 0
+  if not ok then found={} end
+  local stateOK,state=pcall(readState)
+  if not stateOK then report.valid=false;report.error=tostring(state);state={} end
+  if not bindings then
+   bindings={};for role,station in pairs(C.castStations or {}) do bindings[role]=station end
+   local loaded,saved=pcall(function()
+    local f=fs.open(fs.combine(root,"gear_stations.txt"),"r")
+    if not f then return {} end
+    local raw=f.readAll();f.close();local value=textutils.unserialize(raw)
+    assert(type(value)=="table","Unreadable gear_stations.txt");return value
+   end)
+   if loaded then for role,station in pairs(saved) do bindings[role]=station end
+   else report.valid=false;report.error=tostring(saved) end
+  end
+  for _,role in ipairs(roles) do
+   local target=bindings[role] and bindings[role].peripheral
+   local entry=target and state[target]
+   local status=entry and entry.role==role and entry.status or "missing"
+   if entry and entry.role~=role and entry.status~="missing" then status="suspect" end
+   local stock=found[role]
+   report.casts[role]={available=ok and stock~=nil,quantity=stock and stock.quantity or 0,
+    installed=status=="installed" or status=="verified",status=status,station=target,record=entry}
+  end
+  local written,err=pcall(function()
+   local path=fs.combine(root,"cast_availability.txt")
+   local temp=path..".download"
+   local f=assert(fs.open(temp,"w"));f.write(textutils.serialize(report));f.close()
+   if fs.exists(path) then fs.delete(path) end
+   fs.move(temp,path)
+  end)
+  if not written then report.valid=false;report.error="Cannot save cast availability: "..tostring(err) end
+  return report
  end
  function T.ensure(role,target,bindings)
   if role=="Block" then return end
