@@ -134,3 +134,9 @@ after cast transfers/failures and before Resume. Adding a replacement cast updat
 the buttons without running Cast Checker. A failed job remains paused until Resume;
 uncertain/partial pours and wrong-output records still require inspection. Chest
 quantities and installation state are saved together in cast_availability.txt.
+
+Gear UI 1.2.3 keeps menu rendering free of inventory/file reads. A separate worker
+refreshes the shared cast snapshot on the configured polling interval and after
+cast state changes. Menus briefly show Checking cast stock on first startup.
+Actual casting and Resume still validate live state. Registry-recognized casts
+avoid detail queries; NBT-specific names are cached for 30 seconds.

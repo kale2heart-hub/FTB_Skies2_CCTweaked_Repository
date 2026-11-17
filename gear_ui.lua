@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.2.2","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.2.3","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Crafting Center UI: dedicated Other casting queue; equipment remains demo.
 local ROOT = fs.getDir(shell.getRunningProgram())
@@ -167,15 +167,26 @@ local function recipe(item,category)
   end
 end
 -- Live chest refresh; Cast Checker is optional for Gear UI operation.
-local castReport,castReportError,castReportAt=nil,nil,-10
+local castReport,castReportError=nil,nil
 local function readCastReport(force)
- if not force and os.clock()-castReportAt<math.max(1,C.pollSeconds or 3) then return end
- castReportAt=os.clock(); castReport=nil
+ if not force then return end -- Drawing must never perform inventory or file I/O.
  local ok,result=pcall(Cast.refreshAvailability,castStations)
  if ok and type(result)=="table" and result.valid then
   castReport=result;castReportError=nil
  else
+  castReport=nil
   castReportError=ok and type(result)=="table" and result.error or tostring(result)
+ end
+end
+local function castStockWorker()
+ while true do
+  readCastReport(true)
+  os.queueEvent("gear_cast_stock_ready")
+  local timer=os.startTimer(math.max(1,C.pollSeconds or 3))
+  while true do
+   local event,id=os.pullEvent()
+   if (event=="timer" and id==timer) or event=="gear_cast_stock_refresh" then break end
+  end
  end
 end
 local function castProblem(item,category,selected)
@@ -196,11 +207,11 @@ local function castProblem(item,category,selected)
  for role in pairs(needed) do
   local station=castStations[role]
   local target=station and station.peripheral
-  local ok,status=pcall(Cast.status,role,target)
-  if not ok then return tostring(status),colors.orange end
+  local entry=castReport and castReport.casts[role]
+  if not entry then return castReportError or "Checking cast stock...",colors.orange end
+  local status=entry.status
   if status=="pending" or status=="suspect" then return "Inspect cast: "..Cast.location(target),colors.orange end
   local installed=status=="installed" or status=="verified"
-  local entry=castReport and castReport.casts[role]
   if not installed and (not entry or entry.available~=true) then
    if not castReport then return castReportError,colors.orange end
    missing[#missing+1]=role
@@ -714,6 +725,7 @@ local function castCall(name,method,...)
   return value
 end
 startLiveCast=function()
+  readCastReport(true)
   local issue=castProblem(S.item,S.category,S.selected)
   if issue then S.message=issue; return end
   local r=S.selected.Material
@@ -871,7 +883,7 @@ local function castWorker()
       local batch=Q.batches[1]
       local fluid,amount=batch.fluid,batch.amount
       local tableName=batch.station
-      castReportAt=-10
+      readCastReport(true)
       local issue=castProblem(batch.shape,"Other")
       if issue then error(issue,0) end
       if not tableName or tableName=="" then error("No dedicated station assigned to "..batch.shape,0) end
@@ -893,7 +905,6 @@ local function castWorker()
       if next(castCall(tableName,"list")) then error("Table output occupied",0) end
       if fluidTotal(tableName)>0 then error("Table already contains fluid",0) end
       Cast.ensure(batch.shape,tableName,castStations)
-      castReportAt=-10
       local available=0
       for _,name in ipairs(sources) do available=available+fluidTotal(name,fluid) end
       if available<amount then error("Not enough molten "..batch.material,0) end
@@ -1344,7 +1355,7 @@ render=function()
   end
   drawJob()
 end
-connect(); refreshStock(); readCastReport(true); updatePulse(); render()
+connect(); refreshStock(); updatePulse(); render()
 print("Gear UI running. All configured monitors share control.")
 print("Other casting jobs use dedicated station assignments in gear_stations.txt.")
 print("Leave each correct cast installed; do not share stations between cast types.")
@@ -1365,7 +1376,9 @@ while true do
     end
     render()
   elseif event=="gear_cast_availability" then
-    readCastReport(true); render()
+    os.queueEvent("gear_cast_stock_refresh")
+  elseif event=="gear_cast_stock_ready" then
+    render()
   elseif event=="gear_job_update" then
     render()
   elseif event=="timer" and name==pulseTimer then
@@ -1379,10 +1392,10 @@ while true do
     updatePulse(); drawJob()
     pulseTimer=os.startTimer(0.2)
   elseif event=="timer" and name==timer then
-    refreshStock(); readCastReport(true); render(); timer=os.startTimer(C.pollSeconds)
+    refreshStock(); render(); timer=os.startTimer(C.pollSeconds)
   elseif event=="monitor_resize" or event=="peripheral" or event=="peripheral_detach" then
-    connect(); refreshStock(); readCastReport(true); updatePulse(); render()
+    connect(); refreshStock(); updatePulse(); render()
   end
 end
 end
-parallel.waitForAny(uiLoop,castWorker)
+parallel.waitForAny(uiLoop,castWorker,castStockWorker)

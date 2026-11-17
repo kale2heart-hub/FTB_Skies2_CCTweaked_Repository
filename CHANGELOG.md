@@ -36,12 +36,12 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.1.0 |
-| gear_ui.lua | 1.2.2 |
+| gear_ui.lua | 1.2.3 |
 | station_setup.lua | 1.2.0 |
 | scan.lua | 1.0.1 |
 | update.lua | 1.0.7 |
 | cast_check.lua | 1.2.0 |
-| cast_tracking.lua | 1.0.1 |
+| cast_tracking.lua | 1.0.2 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
 | gear_config.lua | 1.0.0 |
@@ -106,3 +106,8 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Successful cast installation and missing/suspect state updates refresh chest
   quantities and installed records together, including Station Setup transfers.
 - Unreadable inventories are reported as unavailable data rather than stale stock.
+
+### Cast-menu performance fix (Gear UI 1.2.3, Cast Tracking 1.0.2)
+- Drawing buttons reads an in-memory cast snapshot, with no inventory scans or installation-file reads per button/monitor.
+- Periodic cast scans run in a separate parallel worker; production actions still revalidate live state.
+- Recognizable cast registry names avoid detail calls; NBT-specific display names are cached for 30 seconds.

@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.1","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
+-- @crafting-center {"version":"1.0.2","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
 return function(root,C)
  local T={}
  local statePath=fs.combine(root,"cast_installations.txt")
@@ -67,12 +67,23 @@ return function(root,C)
   local status=T.status(role,target)
   return status=="installed" or status=="verified"
  end
+ local detailCache={}
  function T.chest()
   local source=C.castChest or "sophisticatedstorage:chest_1"
   local found,unknown={},0
   for slot,item in pairs(peripheral.call(source,"list")) do
-   local ok,detail=pcall(peripheral.call,source,"getItemDetail",slot)
-   local role=T.match(item,ok and type(detail)=="table" and detail.displayName or item.name)
+   local role=T.match(item,item.name)
+   if not role then
+    local key=item.nbt and (source.."|"..item.name.."|"..item.nbt)
+    local cached=key and detailCache[key]
+    local label=cached and cached.label
+    if not cached or os.clock()-cached.at>=30 then
+     local ok,detail=pcall(peripheral.call,source,"getItemDetail",slot)
+     label=ok and type(detail)=="table" and detail.displayName or item.name
+     if key and ok then detailCache[key]={label=label,at=os.clock()} end
+    end
+    role=T.match(item,label)
+   end
    if role then
     found[role]=found[role] or {quantity=0,slots={}}
     found[role].quantity=found[role].quantity+item.count
@@ -163,7 +174,11 @@ return function(root,C)
    if role~="Block" then T.record(role,target,"suspect","Wrong output: "..item.name.." / "..label) end
    error("Wrong output at "..T.location(target)..": expected "..role..", found "..item.name.." ("..label.."). Check installed cast.",0)
   end
-  if role~="Block" then T.record(role,target,"verified","Expected output: "..item.name) end
+  if role~="Block" then
+   local status,record=T.status(role,target)
+   local reason="Expected output: "..item.name
+   if status~="verified" or record.reason~=reason then T.record(role,target,"verified",reason) end
+  end
   return true
  end
  return T
