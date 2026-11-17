@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.3.1","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.3.2","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Crafting Center UI: dedicated Other casting queue; equipment remains demo.
 local ROOT = fs.getDir(shell.getRunningProgram())
@@ -218,7 +218,7 @@ local function castProblem(item,category,selected)
   local status=entry.status
   if status=="table_error" or entry.tableError then return "TableError: wrong cast at "..Cast.location(target).."; replace cast then Clear Errors",colors.red end
   if status=="pending" or status=="suspect" then return "Inspect cast: "..Cast.location(target),colors.orange end
-  local installed=status=="installed" or status=="verified"
+  local installed=status=="installed" or status=="verified" or status=="unverified"
   if not installed and (not entry or entry.available~=true) then
    if not castReport then return castReportError,colors.orange end
    missing[#missing+1]=role

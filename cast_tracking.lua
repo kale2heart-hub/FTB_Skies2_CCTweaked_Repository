@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.1.2","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
+-- @crafting-center {"version":"1.1.3","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
 return function(root,C)
  local T={}
  local statePath=fs.combine(root,"cast_installations.txt")
@@ -51,26 +51,38 @@ return function(root,C)
   end)
   return ok and state or nil
  end
+ local function migrateRecoveryMarkers(state)
+  for _,entry in pairs(state) do
+   local reason=entry.reason or ""
+   if not entry.tableError and entry.status=="suspect" and
+      (reason:find("Installation missing from recovered backup",1,true)==1 or reason:find("Recovered older installation backup",1,true)==1) then
+    entry.status="unverified"
+    entry.reason="Recovered installation is unverified; the next requested output will verify the cast"
+   end
+  end
+  return state
+ end
  local function readState()
   -- Readers in this instance see a complete snapshot during a commit.
   if writing then return clone(snapshot) end
   local primary=decodeState(statePath)
-  if primary then return primary end
+  if primary then return migrateRecoveryMarkers(primary) end
   local pending=decodeState(statePath..".download")
-  if pending then return pending end
+  if pending then return migrateRecoveryMarkers(pending) end
   local backup=decodeState(backupPath)
   if backup then
    -- An older backup cannot prove the current installed state. Preserve locks
    -- and transfer uncertainty, and require verification of the other entries.
+   migrateRecoveryMarkers(backup)
    for _,entry in pairs(backup) do
-    if not entry.tableError and entry.status~="pending" then
-     entry.status="suspect";entry.reason="Recovered older installation backup; confirm installed/removed in Station Setup"
+    if not entry.tableError and entry.status~="pending" and entry.status~="suspect" then
+     entry.status="unverified";entry.reason="Recovered installation is unverified; the next requested output will verify the cast"
     end
    end
    for role,station in pairs(C.castStations or {}) do
     local target=station.peripheral
     if target and target~="" and not backup[target] then
-     backup[target]={role=role,status="suspect",reason="Installation missing from recovered backup; verify in Station Setup"}
+     backup[target]={role=role,status="unverified",reason="No installation record in recovered backup; the next requested output will verify the cast"}
     end
    end
    return backup
@@ -233,7 +245,7 @@ return function(root,C)
    if entry and entry.tableError then status="table_error" end
    local stock=found[role]
    report.casts[role]={available=ok and stock~=nil,quantity=stock and stock.quantity or 0,
-    installed=status=="installed" or status=="verified",status=status,station=target,record=entry,tableError=entry and entry.tableError or false}
+    verificationNeeded=status=="unverified",installed=status=="installed" or status=="verified",status=status,station=target,record=entry,tableError=entry and entry.tableError or false}
   end
   local basin=bindings.Block and bindings.Block.peripheral
   local basinRecord=basin and state[basin]
@@ -263,6 +275,9 @@ return function(root,C)
   for other,binding in pairs(bindings) do if other~=role and binding.peripheral==target then error("Shared cast station: "..T.location(target),0) end end
   if next(peripheral.call(target,"list")) then error("Output occupied at "..T.location(target),0) end
   for _,tank in pairs(peripheral.call(target,"tanks")) do if (tank.amount or 0)>0 then error("Fluid present at "..T.location(target),0) end end
+  -- Recovery uncertainty is not a detected wrong cast. Use the user's next
+  -- requested cast to verify the existing station, without inserting a duplicate.
+  if status=="unverified" then return end
   local entry=T.chest()[role]
   if not entry then error("No "..role.." cast available for "..T.location(target),0) end
   table.sort(entry.slots,function(a,b) return a.slot<b.slot end)

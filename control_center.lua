@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"control_center","title":"Control Center","launchable":false,"description":"Categorized launcher, managed shells, script versions and a built-in text-file reader."}
+-- @crafting-center {"version":"1.2.2","suite":"crafting-center","id":"control_center","title":"Control Center","launchable":false,"description":"Categorized launcher, managed shells, script versions and a built-in text-file reader."}
 -- Crafting Center console launcher. All launches use fg/separate tabs.
 -- Q or Ctrl+T here closes all Control-Center-managed child programs.
 local SELF=fs.combine(shell.getRunningProgram(),""):gsub("^/+","")
@@ -229,8 +229,9 @@ local activeCategory
 local previousView
 local notice=""
 local textPath,textLines=nil,{}
+local textRows,textRowsWidth=nil,nil
 local function openTextFile(path,keepOffset)
-  textPath=path
+  textPath=path;textRows=nil;textRowsWidth=nil
   if not keepOffset then offset=0 end
   local ok,result=pcall(function()
     local f=assert(fs.open(path,"r"),"File missing or unreadable")
@@ -345,6 +346,96 @@ local function wrapped(lines,width)
   end
   return result
 end
+-- Highlight plain logs and serialized records without evaluating file contents.
+local function highlightText(text)
+  local lower=text:lower()
+  local structured=text:find("=") or text:match('"[^"\n]+"%s*:')
+  local base=colors.white
+  if not structured then
+    local function has(words)
+      for _,word in ipairs(words) do if lower:find(word,1,true) then return true end end
+    end
+    if has({"error","missing","not found","not enough","wrong output","wrong cast","failed","cannot read","still blocked"}) then base=colors.red
+    elseif has({"warning","pending","paused","suspect","unverified","unknown","uncertain","inspect"}) then base=colors.yellow
+    elseif has({"success","verified","completed","cleared","moved","found"}) then base=colors.lime
+    elseif text:match("^%s*#") or text:match("^%s*%-%-%-") or (text:find("%u") and not text:find("%l")) then base=colors.cyan end
+  end
+  local fg={};for index=1,#text do fg[index]=colors.toBlit(base) end
+  local function paint(first,last,color)
+    local code=colors.toBlit(color);for index=first,last do fg[index]=code end
+  end
+  local function skip(pos) while text:sub(pos,pos):match("%s") do pos=pos+1 end;return pos end
+  local function isKey(pos)
+    pos=skip(pos)
+    if text:sub(pos,pos)=="]" then pos=skip(pos+1) end
+    return text:sub(pos,pos)=="=" or text:sub(pos,pos)==":"
+  end
+  local function status(value)
+    value=value:lower()
+    if value=="error" or value=="table_error" or value=="missing" or value=="failed" then return colors.red end
+    if value=="verified" or value=="installed" or value=="done" or value=="completed" or value=="success" then return colors.lime end
+    if value=="pending" or value=="suspect" or value=="unverified" or value=="paused" or value=="unknown" or value=="not_started" then return colors.yellow end
+  end
+  local i=1;local key
+  while i<=#text do
+    local char=text:sub(i,i)
+    if char=='"' or char=="'" then
+      local j=i+1
+      while j<=#text do
+        if text:sub(j,j)=="\\" then j=j+2
+        elseif text:sub(j,j)==char then break else j=j+1 end
+      end
+      j=math.min(j,#text)
+      local value=text:sub(i+1,j-1)
+      if isKey(j+1) then key=value:lower();if structured or base==colors.white then paint(i,j,colors.cyan) end
+      elseif structured then paint(i,j,status(value) or colors.white) end
+      i=j+1
+    elseif char:match("[%a_]") then
+      local _,last=text:find("^[%a_][%w_]*",i)
+      last=last or i
+      local value=text:sub(i,last);local name=value:lower()
+      if isKey(last+1) then key=name;if structured or base==colors.white then paint(i,last,colors.cyan) end
+      elseif structured then
+        local color=status(name)
+        if name=="true" or name=="false" then
+          if key=="tableerror" or key=="error" then color=name=="true" and colors.red or colors.lime
+          else color=name=="true" and colors.lime or colors.yellow end
+        elseif name=="nil" or name=="null" then color=colors.gray end
+        if color then paint(i,last,color) end
+      end
+      i=last+1
+    elseif char:match("%d") or (char=="-" and text:sub(i+1,i+1):match("%d")) then
+      local _,last=text:find("^%-?%d+%.?%d*[eE]?[+-]?%d*",i);last=last or i
+      if structured then paint(i,last,colors.yellow) end
+      i=last+1
+    else
+      if structured and char:match("[{}%[%],:=]") then paint(i,i,colors.gray) end
+      if char=="," then key=nil end
+      i=i+1
+    end
+  end
+  -- Highlight physical table IDs in ordinary logs while retaining severity text.
+  if not structured then
+    local start=1
+    while true do
+      local first,last=text:find(":casting_%d+",start)
+      if not first then break end
+      while first>1 and text:sub(first-1,first-1):match("[%w_]") do first=first-1 end
+      paint(first,last,colors.cyan);start=last+1
+    end
+  end
+  return table.concat(fg)
+end
+local function coloredTextRows(width)
+  if textRows and textRowsWidth==width then return textRows end
+  textRows={};textRowsWidth=width
+  for _,text in ipairs(textLines) do
+    local fg=highlightText(text)
+    if #text==0 then textRows[#textRows+1]={text="",fg=""} end
+    for pos=1,#text,width do textRows[#textRows+1]={text=text:sub(pos,pos+width-1),fg=fg:sub(pos,pos+width-1)} end
+  end
+  return textRows
+end
 local function parityStatus(state)
   if not state or not state.loadedFiles then return "loaded version unknown" end
   for file,loaded in pairs(state.loadedFiles) do
@@ -406,10 +497,17 @@ local function render()
     end
     if #textFiles==0 then line(4,"No .txt files found. R rescans.") end
   elseif view=="text" then
-    local lines=wrapped(textLines,w)
+    local lines=coloredTextRows(w)
     offset=math.max(0,math.min(offset,math.max(0,#lines-capacity)))
     line(3,"READ ONLY | Lines "..(offset+1).."-"..math.min(#lines,offset+capacity).."/"..#lines)
-    for row=1,capacity do line(row+3,lines[offset+row] or "") end
+    for row=1,capacity do
+      local entry=lines[offset+row] or {text="",fg=""}
+      if term.blit and (not term.isColor or term.isColor()) then
+        local padding=w-#entry.text
+        term.setCursorPos(1,row+3)
+        term.blit(entry.text..string.rep(" ",padding),entry.fg..string.rep(colors.toBlit(colors.white),padding),string.rep(colors.toBlit(colors.black),w))
+      else line(row+3,entry.text) end
+    end
   elseif view=="list" then
     local visible=visiblePrograms()
     selected=math.max(1,math.min(selected,math.max(1,#visible)))

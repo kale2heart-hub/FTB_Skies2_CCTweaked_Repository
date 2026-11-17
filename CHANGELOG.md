@@ -35,13 +35,13 @@ Date: 2026-11-16
 
 | Script | Version |
 |---|---|
-| control_center.lua | 1.2.0 |
-| gear_ui.lua | 1.3.1 |
-| station_setup.lua | 1.2.1 |
+| control_center.lua | 1.2.2 |
+| gear_ui.lua | 1.3.2 |
+| station_setup.lua | 1.2.2 |
 | scan.lua | 1.0.1 |
 | update.lua | 1.0.8 |
 | cast_check.lua | 1.2.1 |
-| cast_tracking.lua | 1.1.2 |
+| cast_tracking.lua | 1.1.3 |
 | casting_recovery.lua | 1.0.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
@@ -158,3 +158,15 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Enter opens a built-in read-only, wrapped text reader; arrows/pages/mouse wheel scroll, B returns, R reloads/rescans.
 - Files are read only when opened/reloaded, not on every heartbeat redraw. The reader displays up to 512 KiB with a truncation notice for larger files.
 - Small terminals page the section list so the fourth section does not overlap navigation controls.
+
+### Text-reader colours (Control Center 1.2.1)
+- Read-only highlighting colours error/success/warning log lines and headings/table names.
+- Serialized keys, strings, numbers, booleans and status values have distinct colours; tableError=true is red and false is green.
+- Highlighted rows are cached until reload or terminal-width changes. Monochrome terminals retain plain text.
+
+### Avoid global recovery lockout (Gear UI 1.3.2, Cast Tracking 1.1.3)
+- Artificial suspect reasons created by backup recovery migrate automatically to unverified, including already saved records.
+- Unverified stations can perform the next requested cast, which verifies the output; no extra test job is added and no duplicate cast is inserted.
+- Actual TableError locks, pending transfers and genuine suspect states remain protected.
+- A missing cast still becomes missing on zero acceptance; a wrong cast still sets TableError through output verification.
+- Station Setup bulk delivery skips unverified installations; Text Reader colours unverified as a warning.

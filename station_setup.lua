@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.2.1","suite":"crafting-center","id":"stations","title":"Station Setup","args":[],"description":"Assign cast stations, send available casts to their tables, and test insertion.","dependencies":["cast_tracking.lua","gear_config.lua"],"locks":["casting-state"],"category":"Console Scripts"}
+-- @crafting-center {"version":"1.2.2","suite":"crafting-center","id":"stations","title":"Station Setup","args":[],"description":"Assign cast stations, send available casts to their tables, and test insertion.","dependencies":["cast_tracking.lua","gear_config.lua"],"locks":["casting-state"],"category":"Console Scripts"}
 -- Dedicated station setup, bulk cast delivery and one-template insertion tests.
 -- No operation sends fluid or starts casting.
 local ROOT=fs.getDir(shell.getRunningProgram())
@@ -260,7 +260,7 @@ local function previewBulk()
   local ok,reason=pcall(checkDestination,role,target)
   local status=target and Cast.status(role,target) or "missing"
   if status=="installed" or status=="verified" then bulkLines[#bulkLines+1]="SKIP "..role..": already "..status
-  elseif status=="pending" or status=="suspect" or status=="table_error" then bulkLines[#bulkLines+1]="SKIP "..role..": inspect installation record"
+  elseif status=="pending" or status=="suspect" or status=="table_error" or status=="unverified" then bulkLines[#bulkLines+1]="SKIP "..role..": inspect installation record"
   elseif not entry then bulkLines[#bulkLines+1]="SKIP "..role..": no matching cast in chest"
   elseif ambiguous then bulkLines[#bulkLines+1]="SKIP "..role..": different matching items; use single test"
   elseif not ok then bulkLines[#bulkLines+1]="SKIP "..role..": "..tostring(reason)

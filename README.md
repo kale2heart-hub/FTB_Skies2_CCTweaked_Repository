@@ -175,10 +175,10 @@ stale locks, with unverified installation still marked missing. Hidden installed
 casts can be confirmed with I in Station Setup. No fluid is sent or item moved by
 Clear Errors. An active wrong-output job is released only if its own table passes.
 
-Cast Tracking 1.1.2 recovers interrupted installation saves automatically from a
-valid pending file or backup. A pending save retains its recorded state; older
-backup-only recovery marks installations for verification in Station Setup while
-preserving TableError and pending transfers. The next successful save repairs the
+Cast Tracking recovers interrupted installation saves automatically from a
+valid pending file or backup. A pending save retains its recorded state. In
+1.1.3, older backup-only recovery marks installations unverified; ordinary
+requested outputs verify them, while TableError and pending transfers stay protected. The next successful save repairs the
 primary record. Corrupt originals are retained. If no valid copy exists, records
 are not silently discarded.
 
@@ -188,3 +188,15 @@ Enter reads a selected file inside Control Center. Up/Down, PageUp/PageDown and
 mouse wheel scroll; B returns; R reloads the file or refreshes the file list.
 The reader never executes or edits file contents. Q retains its existing meaning:
 it closes Control Center and all its managed programs.
+
+Control Center 1.2.1 adds text-reader highlighting: red errors, green success,
+yellow warnings, cyan headings/table IDs/field keys, and coloured structured
+values. tableError=true is red; false is green. Files are unchanged, and cached
+colours are recalculated on R reload or terminal-width changes.
+
+Recovery correction in Gear UI 1.3.2 / Cast Tracking 1.1.3: the earlier synthetic
+suspect markers from backup recovery automatically become unverified, rather
+than blocking every table. The next ordinary requested cast verifies that table's
+output using the existing guards and recovery limits. No extra test pour is added
+and unverified installations do not cause duplicate cast insertion. Actual wrong
+casts, pending transfers and genuine suspect records remain protected.
