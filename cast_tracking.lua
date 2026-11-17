@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
+-- @crafting-center {"version":"1.1.1","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
 return function(root,C)
  local T={}
  local statePath=fs.combine(root,"cast_installations.txt")
@@ -67,12 +67,54 @@ return function(root,C)
   state[target]={role=role,status="missing",tableError=true,actualCast=actual,reason=reason,updatedAt=os.epoch("utc")}
   saveState(state);T.refreshAvailability();os.queueEvent("gear_cast_availability")
  end
- function T.clearTableErrors()
-  local state=readState();local count=0
-  for _,entry in pairs(state) do
-   if entry.tableError then entry.tableError=false;entry.actualCast=nil;count=count+1 end
+ function T.clearTableErrors(bindings,extraTarget,extraRole)
+  local state=readState();local count=0;local lines={};local cleared={}
+  local targets={}
+  for target,entry in pairs(state) do if entry.tableError then targets[#targets+1]=target end end
+  -- Include an old wrong-output journal even if its saved table flag is stale.
+  if extraTarget and not (state[extraTarget] and state[extraTarget].tableError) then
+   state[extraTarget]=state[extraTarget] or {role=extraRole,status="missing"}
+   state[extraTarget].tableError=true;targets[#targets+1]=extraTarget
   end
-  saveState(state);T.refreshAvailability();os.queueEvent("gear_cast_availability");return count
+  table.sort(targets)
+  for _,target in ipairs(targets) do
+   local entry=state[target];local role=entry.role
+   local owners={}
+   for name,station in pairs(bindings or {}) do if station.peripheral==target then owners[#owners+1]=name end end
+   if #owners==1 then role=owners[1] end
+   local ok,result=pcall(function()
+    assert(#owners<=1,"Table assigned to multiple cast types")
+    local items=peripheral.call(target,"list")
+    local tanks=peripheral.call(target,"tanks")
+    assert(type(items)=="table" and type(tanks)=="table","Table inventory/fluid data unavailable")
+    local fluid=0;for _,tank in pairs(tanks) do fluid=fluid+(tank.amount or 0) end
+    if fluid>0 then error("Still contains "..fluid.." mB; inspect/drain table",0) end
+    local item=items[1]
+    if not item and next(items) then error("Unexpected occupied slot; inspect table",0) end
+    if item then
+     local _,actual,_,shapeMatch=T.outputInfo(role,target,item,nil,{})
+     if not shapeMatch then
+      entry.actualCast=actual
+      error("Wrong output: "..actual.." Cast; expected "..tostring(role).." Cast ("..item.name..")",0)
+     end
+     entry.status="verified"
+     return "Matching "..role.." output; cast verified. Collect output before another pour."
+    end
+    if entry.role~=role or (entry.status~="installed" and entry.status~="verified") then entry.status="missing" end
+    return "Empty and fluid-free; stale lock cleared. Cast slot hidden; installation remains "..entry.status.."."
+   end)
+   entry.updatedAt=os.epoch("utc")
+   if ok then
+    count=count+1;cleared[target]=true
+    entry.role=role;entry.tableError=false;entry.actualCast=nil;entry.reason=result
+    lines[#lines+1]="CLEARED "..T.location(target)..": "..result
+   else
+    entry.tableError=true;entry.reason=tostring(result)
+    lines[#lines+1]="STILL BLOCKED "..T.location(target)..": "..tostring(result)
+   end
+  end
+  saveState(state);T.refreshAvailability(bindings);os.queueEvent("gear_cast_availability")
+  return count,lines,cleared
  end
  function T.status(role,target)
   local entry=readState()[target]

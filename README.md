@@ -165,5 +165,12 @@ New jobs using that table, including dependent equipment, are blocked. Stock is
 rescanned and the error reports the actual/expected cast, physical table location,
 and whether a correct spare is available. Other errors do not set TableError.
 Replace/remove the wrong cast and inspect any remaining fluid, then use Clear
-Errors in Error Report. This clears all table flags; it does not physically remove
-casts or drain fluid. Resume can then install a spare and retry the requested unit.
+Errors in Error Report. This revalidates flagged tables and clears locks that pass; it does not physically
+remove casts or drain fluid. Resume can then install a spare and retry the requested unit.
+
+Gear UI 1.3.1: Clear Errors now revalidates each flagged table and reports which
+locks cleared or remain blocked. Wrong outputs, fluid and unreadable tables keep
+their locks. Matching outputs verify installation; empty, fluid-free tables clear
+stale locks, with unverified installation still marked missing. Hidden installed
+casts can be confirmed with I in Station Setup. No fluid is sent or item moved by
+Clear Errors. An active wrong-output job is released only if its own table passes.

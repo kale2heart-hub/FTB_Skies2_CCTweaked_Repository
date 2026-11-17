@@ -36,12 +36,12 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.1.0 |
-| gear_ui.lua | 1.3.0 |
+| gear_ui.lua | 1.3.1 |
 | station_setup.lua | 1.2.1 |
 | scan.lua | 1.0.1 |
 | update.lua | 1.0.8 |
 | cast_check.lua | 1.2.1 |
-| cast_tracking.lua | 1.1.0 |
+| cast_tracking.lua | 1.1.1 |
 | casting_recovery.lua | 1.0.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
@@ -138,3 +138,9 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Partial/uncertain recovery pours, rejected transfers, mixed/changed fluids,
   blocked output, and remaining fluid stop recovery for inspection.
 - Added casting_recovery.lua v1.0.0; updater v1.0.8 includes it automatically.
+
+### Revalidate persistent table errors (Gear UI 1.3.1)
+- Clear Errors queries every affected table before clearing saved locks, including stale wrong-output journals.
+- Wrong output, remaining fluid, conflicting assignments and unreadable tables stay blocked with current location/details.
+- Matching outputs verify installation. Empty, fluid-free tables clear stale locks without claiming the hidden cast is verified.
+- A wrong-output journal is released for retry only when that specific table passes revalidation.

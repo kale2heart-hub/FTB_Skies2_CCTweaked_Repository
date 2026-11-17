@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.3.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.3.1","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Crafting Center UI: dedicated Other casting queue; equipment remains demo.
 local ROOT = fs.getDir(shell.getRunningProgram())
@@ -878,15 +878,19 @@ local function recoverQueuedOutput(batch,journal)
 end
 local function clearTableErrors()
   if S.busy then S.message="Wait for the current operation to stop";return end
-  local count=Cast.clearTableErrors()
   local old=previousJob()
-  if Q.active and old and old.queueToken==Q.token and old.status=="wrong_output_delivered" then
+  local pendingWrong=Q.active and old and old.queueToken==Q.token and old.status=="wrong_output_delivered"
+  local batch=Q.batches[1]
+  local count,lines,cleared=Cast.clearTableErrors(castStations,pendingWrong and old.table or nil,batch and batch.shape)
+  if pendingWrong and cleared[old.table] then
     old.status="not_started";writeJob(old)
     Q.active=false;Q.pendingFluid=false;Q.token=nil;saveQueue()
   end
   readCastReport(true)
-  S.message="Cleared "..count.." TableError states. Resume after fixing casts."
-  S.castIssue=S.message
+  S.message="Revalidated tables: "..count.." cleared."
+  if #lines==0 then lines[1]="No saved TableError states found." end
+  S.castIssue=S.message.." "..table.concat(lines," ")
+  if pendingWrong and cleared[old.table] then Q.reason=S.castIssue;S.job=nil;saveQueue() end
 end
 local function resumeQueue()
   if S.busy then return end
@@ -1287,7 +1291,7 @@ local function renderSpecial()
       button(1,3,math.floor(W*.43),"<< Back",function() go(S.issueReturn or "item") end,colors.gray)
       local lines=wrapWords(S.castIssue or "Cast check needed",W-2)
       for i,line in ipairs(lines) do if 6+i<H-5 then text(6+i,line) end end
-      text(H-4,"Replace wrong casts before Clear Errors")
+      text(H-4,"Clear Errors rechecks table contents")
       local rightX=math.floor(W*.43)+3
       button(rightX,H-1,W-rightX+1,"Clear Errors",clearTableErrors,colors.red)
       text(H-2,"Chest stock + recorded installation")
