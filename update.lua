@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.3.0","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Check the updater first; install and reboot if changed, otherwise update the remaining scripts from one GitHub commit.","refreshAfterExit":true,"category":"Tools"}
+-- @crafting-center {"version":"1.4.0","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Check the updater first; install and reboot if changed, otherwise update the remaining scripts from one GitHub commit.","refreshAfterExit":true,"category":"Tools"}
 -- Public GitHub updater. Queue, station bindings and job state are untouched.
 local OWNER="kale2heart-hub"
 local REPOSITORY="FTB_Skies2_CCTweaked_Repository"
@@ -7,7 +7,7 @@ local SCRIPT_DIRECTORY="" -- Scripts currently live at the repository root.
 local files={"gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_ui.lua","gear_config.lua","scan.lua","gear_demo.lua",
     "station_setup.lua","cast_check.lua","casting_test.lua","control_center.lua","startup.lua","update.lua"}
 local root=fs.getDir(shell.getRunningProgram())
-local versions,transactions={},{}
+local versions,transactions,staged={},{},{}
 local backupRoot=fs.combine(root,"backups")
 local function cleanup()
     for _,name in ipairs(files) do
@@ -18,7 +18,7 @@ end
 local function get(url,json)
     if not http then error("HTTP is disabled on this computer.",0) end
     local response,err,failed=http.get(url,{
-        ["User-Agent"]="CraftingCenterUpdater/1.3.0",
+        ["User-Agent"]="CraftingCenterUpdater/1.4.0",
         ["Accept"]=json and "application/vnd.github+json" or "text/plain",
     })
     if not response then
@@ -44,6 +44,15 @@ local function metadataVersion(content,name)
     end
     error("Missing version metadata in "..name,0)
 end
+local function read(path)
+    local f=assert(fs.open(path,"r"));local content=f.readAll();f.close();return content
+end
+local function write(path,content)
+    local f=assert(fs.open(path,"w"))
+    local ok,err=pcall(f.write,content)
+    f.close()
+    if not ok then error(err,0) end
+end
 local function rollback()
     local errors={}
     for index=#transactions,1,-1 do
@@ -51,7 +60,7 @@ local function rollback()
         if entry.touched then
             local ok,err=pcall(function()
                 if fs.exists(entry.path) then fs.delete(entry.path) end
-                if entry.hadOriginal then fs.copy(entry.backup,entry.path) end
+                if entry.original then write(entry.path,entry.original) end
             end)
             if not ok then errors[#errors+1]=entry.name..": "..tostring(err) end
         end
@@ -61,47 +70,58 @@ end
 local function normalized(text) return text:gsub("\r\n","\n"):gsub("\r","\n") end
 local function stage(name,content)
     versions[name]=metadataVersion(content,name)
-    local temp=fs.combine(root,name..".download")
-    if fs.exists(temp) then fs.delete(temp) end
-    local f=assert(fs.open(temp,"w")); f.write(content); f.close()
-    local chunk,err=loadfile(temp)
+    local chunk,err=load(content,"@"..name,"t",_ENV)
     if not chunk then error("Invalid Lua in "..name..": "..tostring(err),0) end
+    staged[name]=content
+end
+local function removeScriptBackups()
+    -- Only updater-managed script backups; never cast/queue/settings recovery files.
+    local managed={}
+    for _,name in ipairs(files) do managed[name]=true end
+    local removed=0
+    local function remove(path)
+        if fs.exists(path) and not fs.isDir(path) then fs.delete(path);removed=removed+1 end
+    end
+    for name in pairs(managed) do remove(fs.combine(root,name..".bak")) end
+    if fs.exists(backupRoot) and fs.isDir(backupRoot) then
+        for _,name in ipairs(fs.list(backupRoot)) do
+            local base=name:match("^(.-)%.bak$")
+            if base then
+                base=base:gsub("%.legacy%d+$","")
+                if managed[base] then remove(fs.combine(backupRoot,name)) end
+            end
+        end
+    end
+    if removed>0 then print("Removed "..removed.." old script backups.") end
 end
 local function install(names)
-    -- Move legacy app backups out of the script folder, preserving collisions.
-    fs.makeDir(backupRoot)
-    local legacyNames={"gear_stations.txt"}
-    for _,name in ipairs(files) do legacyNames[#legacyNames+1]=name end
-    for _,name in ipairs(legacyNames) do
-        local old=fs.combine(root,name..".bak")
-        if fs.exists(old) and not fs.isDir(old) then
-            local target=fs.combine(backupRoot,name..".bak")
-            local suffix=1
-            while fs.exists(target) do
-                target=fs.combine(backupRoot,name..".legacy"..suffix..".bak"); suffix=suffix+1
-            end
-            fs.move(old,target)
-        end
-    end
-    -- Prepare all backups while the original installed files remain intact.
+    local needed=0
     for _,name in ipairs(names) do
-        local entry={name=name,path=fs.combine(root,name),backup=fs.combine(backupRoot,name..".bak")}
-        entry.hadOriginal=fs.exists(entry.path)
-        transactions[#transactions+1]=entry
-        if entry.hadOriginal then
-            if fs.exists(entry.backup) then fs.delete(entry.backup) end
-            fs.copy(entry.path,entry.backup)
+        local path=fs.combine(root,name)
+        local original=fs.exists(path) and read(path) or nil
+        local content=assert(staged[name],"Missing staged script: "..name)
+        if not original or normalized(original)~=normalized(content) then
+            transactions[#transactions+1]={name=name,path=path,original=original,content=content}
+            needed=needed+math.max(0,#content-(original and #original or 0))
         end
     end
-    -- Install only the files belonging to this phase.
+    local free=fs.getFreeSpace(root)
+    if type(free)=="number" and needed+4096>free then
+        error("Not enough disk space: need "..(needed+4096).." free bytes, have "..free..". Installed scripts unchanged.",0)
+    end
+    -- All downloads are validated in memory before replacing any installed script.
+    -- Recovery copies live only in RAM for this run, not on the computer's disk.
     for _,entry in ipairs(transactions) do
         entry.touched=true
         if fs.exists(entry.path) then fs.delete(entry.path) end
-        fs.move(entry.path..".download",entry.path)
+        write(entry.path,entry.content)
         print("Updated "..entry.name.." | v"..versions[entry.name])
     end
+    if #transactions==0 then print("All scripts are already current.") end
 end
 local function update()
+    cleanup()
+    removeScriptBackups()
     print("GitHub: "..OWNER.."/"..REPOSITORY.." ("..BRANCH..")")
     local api="https://api.github.com/repos/"..OWNER.."/"..REPOSITORY.."/commits/"..BRANCH
     local revision=textutils.unserializeJSON(get(api,true))
@@ -147,7 +167,7 @@ local function update()
             commit=sha,versions=versions,installedAt=os.epoch("utc")})); f.close()
     end)
     print("Update complete: "..sha:sub(1,12))
-    print("Previous scripts are in backups/*.bak.")
+    print("No script backups saved; recovery copies were kept in memory only.")
     if not ok then printError("Scripts updated, but revision receipt could not be saved.") end
 end
 local ok,err=pcall(update)
@@ -159,7 +179,7 @@ if not ok then
         local errors=rollback()
         if #errors==0 then printError("Previous installed scripts restored.")
         else
-            printError("Restore incomplete. Backup files are retained:")
+            printError("Restore incomplete. Download the listed scripts again:")
             for _,message in ipairs(errors) do printError(message) end
         end
     else printError("Installed scripts unchanged.") end

@@ -44,16 +44,20 @@ folder. Start `control_center` afterwards. It requires an Advanced Computer.
 
 Each update resolves main to a commit first and downloads all files at that
 same commit. It validates Lua and version metadata before changing installed
-files. It checks update.lua first; a changed updater is backed up and installed,
+files. It checks update.lua first; a changed updater is installed,
 then the computer reboots so startup can continue with the new updater. If it is
-unchanged, the remaining scripts are validated and installed with backups and
-rollback on failure. It writes installed_revision.txt
+unchanged, remaining downloads are validated in memory and only changed scripts
+are written, with in-memory rollback on failure. It writes installed_revision.txt
 with the commit and file versions. API/download failures leave installed code
 unchanged. Downloads use public GitHub access, without a token in Minecraft.
 
 Saved gear_stations.txt, gear_queue.txt, casting_test_state.txt and registry
 files remain local. They are not downloaded or committed. Existing configuration
-source is updated with a .bak copy, matching the previous updater's behavior.
+source is updated without saving a script backup. Updater 1.4.0 removes its old
+script .bak files, including legacy copies, while preserving cast/queue/settings
+recovery files. Downloads no longer occupy disk space. Recovery copies exist
+only in RAM during the update; a power loss mid-install requires rerunning the
+updater. Disk space is checked before installation.
 Running programs keep their loaded code until restarted; Control Center's V
 view identifies script/dependency differences.
 

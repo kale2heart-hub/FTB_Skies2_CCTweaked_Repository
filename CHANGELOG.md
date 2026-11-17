@@ -4,6 +4,17 @@ This log records major build changes. Script metadata versions remain separate
 and identify individual files. Unreleased entries describe local work that has
 not yet been committed or published as a release.
 
+## Updater 1.4.0 - Disk space fix (Unreleased)
+
+Date: 2026-11-17
+
+- Removes previous updater-managed script backups, including legacy script copies;
+  cast-tracking, queue, settings and Station Setup state backups remain intact.
+- Validates downloads in memory instead of staging every script on disk.
+- Skips unchanged scripts and checks free disk space before installation.
+- Retains originals in memory for rollback during this run; no persistent script
+  backups are created. A power loss during installation requires rerunning updates.
+
 ## 2.1.0 - Gear material review (Unreleased)
 
 Date: 2026-11-17

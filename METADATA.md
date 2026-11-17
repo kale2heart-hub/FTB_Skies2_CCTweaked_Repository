@@ -127,8 +127,9 @@ extra Lua download or script metadata file is needed. Its system implementation
 is not included in the project's version checksum. CHANGELOG.md records major
 builds; individual script metadata versions identify smaller file changes.
 
-The updater and Station Setup use backups/ for .bak files, and discovery skips
-that folder. Current source files are maintained in the local GitHub checkout.
+Station Setup uses backups/ for state backups, and discovery skips that folder.
+Updater 1.4.0 removes only managed script backups and uses in-memory recovery
+copies during installation; state backups remain intact. Current source files are maintained in the local GitHub checkout.
 
 Casting recovery adds the non-launchable casting_recovery.lua helper (v1.0.0),
 listed in Gear UI dependencies and the updater. cast_installations.txt now also
