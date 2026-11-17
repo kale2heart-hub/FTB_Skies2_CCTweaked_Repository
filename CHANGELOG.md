@@ -36,7 +36,7 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.1.0 |
-| gear_ui.lua | 1.2.0 |
+| gear_ui.lua | 1.2.1 |
 | station_setup.lua | 1.2.0 |
 | scan.lua | 1.0.1 |
 | update.lua | 1.0.7 |
@@ -92,3 +92,9 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Gear UI installs missing available casts, verifies output names before collection,
   and pauses with physical table locations on wrong/missing output.
 - update.lua v1.0.7 includes the new shared helper.
+
+### Queue error recovery fixes (Gear UI 1.2.1)
+- Zero-fluid rejection reports a missing/incompatible cast and physical table location; real partial pours report measured amounts.
+- Paused failed jobs can be removed, with active journals archived and table contents preserved.
+- Home sits beside Back; opening the queue from an error no longer traps navigation.
+- Queue rows show pouring/cooling/transfer progress or a clickable paused-job error.

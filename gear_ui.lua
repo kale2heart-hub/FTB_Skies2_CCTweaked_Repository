@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.2.1","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Crafting Center UI: dedicated Other casting queue; equipment remains demo.
 local ROOT = fs.getDir(shell.getRunningProgram())
@@ -89,6 +89,7 @@ local function previousJob()
   if not fs.exists(JOB_STATE) then return nil end
   local f=assert(fs.open(JOB_STATE,"r")); local j=textutils.unserialize(f.readAll()); f.close()
   if type(j)~="table" then return {status="unreadable"} end
+  if j.status=="cancelled" or j.status=="not_started" then return nil end
   return j
 end
 local QUEUE_FILE=fs.combine(ROOT,"gear_queue.txt")
@@ -100,6 +101,7 @@ if fs.exists(QUEUE_FILE) then
   if #Q.batches>0 or Q.active then Q.paused=true; Q.reason="Restarted - inspect, then Resume" end
 end
 for _,batch in ipairs(Q.batches) do
+  batch.completed=batch.completed or math.max(0,(batch.quantity or batch.remaining)-batch.remaining)
   batch.fluid=batch.fluid or "productivemetalworks:molten_iron"
   batch.amount=batch.amount or 90
   batch.outputs=batch.outputs or {"minecraft:iron_ingot","ftbmaterials:iron_ingot"}
@@ -124,11 +126,15 @@ end
 local function waitingItems()
   local n=0
   for _,batch in ipairs(Q.batches) do n=n+batch.remaining end
-  return math.max(0,n-(Q.active and 1 or 0))
+  return math.max(0,n-((S.busy or (Q.active and not Q.paused)) and 1 or 0))
+end
+local function protectedUnit(index)
+  return index==1 and (S.busy or (Q.active and not Q.paused)) and 1 or 0
 end
 local function advanceQueue()
   local batch=Q.batches[1]
   if batch then
+    batch.completed=(batch.completed or 0)+1
     batch.remaining=batch.remaining-1
     if batch.remaining<=0 then table.remove(Q.batches,1) end
   end
@@ -733,6 +739,7 @@ startLiveCast=function()
     deliverySeconds=station.deliverySeconds or 120,
     fluid=r.name,amount=r.amount,outputs=outputs}
   Q.nextId=batch.id+1
+  batch.completed=0
   Q.batches[#Q.batches+1]=batch
   saveQueue()
   S.message="Queued "..batch.label.." x"..batch.quantity
@@ -748,8 +755,24 @@ local function resumeQueue()
     end
     if old.status~="done" then
       local batch=Q.batches[1]
+      -- Recover zero-acceptance journals created by older UI versions too.
+      if batch and old.moved==0 then
+        local checked,empty=pcall(function()
+          if next(castCall(old.table,"list")) then return false end
+          for _,tank in pairs(castCall(old.table,"tanks")) do if (tank.amount or 0)>0 then return false end end
+          return true
+        end)
+        if checked and empty then
+          old.status="not_started"; writeJob(old)
+          Q.active=false; Q.pendingFluid=false; Q.token=nil; Q.paused=true
+          if batch.shape~="Block" then Cast.record(batch.shape,old.table,"missing","No fluid accepted; check missing/incompatible cast") end
+          Q.reason="Missing or incompatible "..batch.shape.." cast at "..Cast.location(old.table)..". No fluid accepted; check cast before retrying."
+          saveQueue(); S.issueReturn="queue"; S.castIssue=Q.reason; go("castIssue"); return
+        end
+      end
       if not batch or old.moved~=batch.amount or old.fluid~=batch.fluid then
-        S.message="Partial/uncertain fluid transfer needs inspection"; return
+        S.message=(Q.reason or "Partial/uncertain fluid transfer needs inspection").." | "..Cast.location(old.table)
+        S.issueReturn="queue"; S.castIssue=S.message; go("castIssue"); return
       end
       S.busy=true
       local ok,delivered=pcall(function()
@@ -882,11 +905,13 @@ local function castWorker()
       local empty=false
       for slot=1,castCall(output,"size") do if not contents[slot] then empty=true; break end end
       if not empty then error("Output chest needs an empty slot",0) end
-      journal={status="fluid_transfer_started",table=tableName,source=source,outputChest=output,fluid=fluid,requested=amount,expectedOutputs=batch.outputs}
+      journal={status="fluid_transfer_started",moved=0,table=tableName,source=source,outputChest=output,fluid=fluid,requested=amount,expectedOutputs=batch.outputs}
       Q.token=tostring(Q.batches[1].id)..":"..tostring(Q.batches[1].quantity-Q.batches[1].remaining+1)
       Q.active=true; Q.pendingFluid=true; saveQueue()
       journal.queueToken=Q.token
       writeJob(journal)
+      S.job={phase="pouring",progress=0,label="Pouring "..batch.label}
+      os.queueEvent("gear_job_update")
       local moved=0
       for _,name in ipairs(sources) do
         if moved>=amount then break end
@@ -894,8 +919,15 @@ local function castWorker()
         if type(count)~="number" or count<0 or count>amount-moved then error("Unexpected fluid transfer result",0) end
         moved=moved+count; journal.moved=moved; writeJob(journal)
       end
+      if moved==0 and fluidTotal(tableName)==0 and not next(castCall(tableName,"list")) then
+        -- No fluid entered this job. Do not leave a protected active unit behind.
+        journal.status="not_started"; writeJob(journal)
+        Q.active=false; Q.pendingFluid=false; Q.token=nil; saveQueue()
+        if batch.shape~="Block" then Cast.record(batch.shape,tableName,"missing","No fluid accepted; cast may be missing or incompatible") end
+        error("Missing or incompatible "..batch.shape.." cast at "..Cast.location(tableName)..". Table accepted 0 / "..amount.." mB. Check cast before retrying.",0)
+      end
       journal.status="waiting_for_output"; writeJob(journal)
-      if moved~=amount then error("Partial fluid transfer; inspect table",0) end
+      if moved~=amount then error("Partial fluid transfer ("..moved.." / "..amount.." mB) at "..Cast.location(tableName).."; check cast and table contents before retrying",0) end
       Q.pendingFluid=false; saveQueue()
       S.job={phase="cooling",started=os.clock(),duration=batch.coolSeconds,progress=0,label="Casting "..batch.label}
       os.queueEvent("gear_job_update")
@@ -930,8 +962,12 @@ local function castWorker()
       error("Output blocked at "..Cast.location(tableName),0)
     end)
     if not ok then
+      local batch=Q.batches[1]
+      local location=batch and Cast.location(batch.station)
+      err=tostring(err)
+      if location and not err:find(location,1,true) then err=err.." | "..location end
       printError(err)
-      S.busy=false; Q.paused=true; Q.reason=tostring(err); saveQueue()
+      S.busy=false; Q.paused=true; Q.reason=err; saveQueue()
       S.job={phase="error",progress=1,label=tostring(err)}
       S.issueReturn="queue"; S.castIssue=tostring(err); go("castIssue")
       os.queueEvent("gear_job_update")
@@ -940,19 +976,40 @@ local function castWorker()
   end
 end
 local function cancelWaiting(id,one)
+  local cancelledCurrent=false
+  local cancelledBatch=false
   for i=#Q.batches,1,-1 do
     local batch=Q.batches[i]
     if not id or batch.id==id then
-      -- Protect the current unit even during preflight, before fluid is sent.
-      local protect=i==1 and (Q.active or S.busy) and 1 or 0
+      local protect=protectedUnit(i)
       local removable=math.max(0,batch.remaining-protect)
+      batch.completed=batch.completed or math.max(0,(batch.quantity or batch.remaining)-batch.remaining)
       local count=one and math.min(1,removable) or removable
+      if i==1 and count>0 and Q.paused and not S.busy then
+        cancelledBatch=true
+        if Q.active then
+          local old=previousJob()
+          if not old or old.queueToken~=Q.token then S.message="Pending job record mismatch; inspect before cancelling"; return end
+          -- Keep a durable audit. Cancellation never pulls items or sends fluid.
+          fs.makeDir(fs.combine(ROOT,"backups"))
+          local audit=fs.combine(ROOT,"backups/cancelled_cast_"..os.epoch("utc").."_"..batch.id..".txt")
+          local f=assert(fs.open(audit,"w")); f.write(textutils.serialize(old)); f.close()
+          old.previousStatus=old.status; old.status="cancelled"; old.cancelledAt=os.epoch("utc"); writeJob(old)
+          Q.active=false; Q.pendingFluid=false; Q.token=nil
+          cancelledCurrent=true
+        end
+      end
       batch.remaining=batch.remaining-count
       if batch.remaining==0 then table.remove(Q.batches,i) end
     end
   end
+  if cancelledBatch then
+    S.job=nil
+    Q.reason=#Q.batches>0 and "Failed item cancelled; inspect table, then Resume" or nil
+    if #Q.batches==0 then Q.paused=false end
+  end
   saveQueue()
-  S.message=one and "Removed one waiting item" or "Waiting items removed; current cast kept"
+  S.message=cancelledCurrent and "Cancelled. Table contents left for inspection." or one and "Removed one item" or "Removed selected items"
   os.queueEvent("gear_job_update")
 end
 local function openMain()
@@ -964,7 +1021,10 @@ local function openSection(section)
   else S.category=section=="parts" and "Other Tool Parts" or "Other"; go("sectionItems") end
 end
 local function openQueue()
-  S.returnScreen=S.screen; go("queue")
+  -- Error details and the queue are transient pages, never queue back targets.
+  if S.screen~="queue" and S.screen~="castIssue" then S.returnScreen=S.screen end
+  if not S.returnScreen or S.returnScreen=="castIssue" or S.returnScreen=="queue" then S.returnScreen="main" end
+  go("queue")
 end
 local function wrapWords(text,width)
   local lines={}; local line=""
@@ -1141,7 +1201,7 @@ local function renderSpecial()
         local index=(S.page-1)*count+row
         local batch=Q.batches[index]
         if batch then
-          local protect=index==1 and (Q.active or S.busy) and 1 or 0
+          local protect=protectedUnit(index)
           local waiting=batch.remaining-protect
           local y=7+(row-1)*3
           local labelWidth=W-15
@@ -1151,8 +1211,17 @@ local function renderSpecial()
           local id=batch.id
           button(labelWidth+2,y,5,"-1",waiting>0 and function() cancelWaiting(id,true) end or nil,colors.gray)
           button(labelWidth+8,y,8,"Remove",waiting>0 and function() cancelWaiting(id,false) end or nil,colors.red)
-          if protect==1 then
-            m.setBackgroundColor(colors.black); m.setCursorPos(ox+1,oy+y+2); m.write("1 current cast protected")
+          if index==1 and (S.busy or Q.active or Q.paused) then
+            local completed=batch.completed or math.max(0,(batch.quantity or batch.remaining)-batch.remaining)
+            local current=completed+1
+            local phase=S.job and S.job.phase
+            local status=Q.paused and "Error! Job paused - click for info" or
+              ((phase=="cooling" and "Cooling" or phase=="delivery" and "Transferring" or phase=="pouring" and "Pouring" or "Preparing").." item #"..current.." of "..(completed+batch.remaining))
+            m.setBackgroundColor(colors.black); m.setTextColor(Q.paused and colors.red or colors.white)
+            m.setCursorPos(ox+1,oy+y+2); m.write(status:sub(1,W))
+            if Q.paused then d.buttons[#d.buttons+1]={x=ox+1,y=oy+y+2,w=W,h=1,action=function()
+              S.issueReturn="queue"; S.castIssue=Q.reason or "Queue paused"; go("castIssue")
+            end} end
           end
         end
       end
@@ -1163,7 +1232,7 @@ local function renderSpecial()
       text(H-2,S.message)
       if Q.paused then
         button(1,H-1,half,"Resume Queue",resumeQueue,colors.red)
-        button(half+3,H-1,W-half-2,"Clear waiting",waitingItems()>0 and function() cancelWaiting(nil,false) end or nil,colors.gray)
+        button(half+3,H-1,W-half-2,"Clear queue",waitingItems()>0 and function() cancelWaiting(nil,false) end or nil,colors.gray)
       else
         button(1,H-1,W,"Clear waiting items",waitingItems()>0 and function() cancelWaiting(nil,false) end or nil,colors.red)
       end
@@ -1252,6 +1321,12 @@ render=function()
           d.mon.write(row==0 and centered("Queue",width) or string.rep(" ",width))
         end
         if available then d.buttons[#d.buttons+1]={x=ox+x,y=y,w=width,h=2,action=openQueue} end
+        if S.screen~="main" then
+          local homeWidth=W-paneX+1
+          d.mon.setBackgroundColor(colors.blue); d.mon.setTextColor(colors.white)
+          for row=0,1 do d.mon.setCursorPos(ox+paneX,oy+3+row); d.mon.write(row==0 and centered("Home",homeWidth) or string.rep(" ",homeWidth)) end
+          d.buttons[#d.buttons+1]={x=ox+paneX,y=oy+3,w=homeWidth,h=2,action=openMain}
+        end
         if S.item then
           d.mon.setBackgroundColor(colors.black); d.mon.setTextColor(colors.lightGray)
           d.mon.setCursorPos(ox+1,oy+2); d.mon.write(centered((S.section=="parts" and "Tool Parts" or S.category or "").." > "..S.item,W))

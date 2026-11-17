@@ -120,3 +120,11 @@ removal or trigger another pour. Wrong output is left on the table and pauses th
 queue with its row/side/position. Correct output is checked before normal and
 recovery collection. Installed records follow the physical table, not reassigned
 roles. Queue jobs keep their original station assignments.
+
+Queue recovery (Gear UI 1.2.1): an empty table accepting zero fluid reports a
+missing/incompatible cast with its physical location, while real partial pours
+show moved/required mB. Failed paused jobs can be removed, including their active
+unit. Cancellation archives the active journal in backups/cancelled_cast_*.txt
+and leaves table fluid/output untouched. Running casts remain protected. Home
+beside Back returns to the main menu, and queued-job status shows pouring,
+cooling or transferring with item progress. Tap a paused error for details.
