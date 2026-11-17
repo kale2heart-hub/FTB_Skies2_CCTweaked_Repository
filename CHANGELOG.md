@@ -37,7 +37,7 @@ Date: 2026-11-16
 |---|---|
 | control_center.lua | 1.1.0 |
 | gear_ui.lua | 1.1.0 |
-| station_setup.lua | 1.0.2 |
+| station_setup.lua | 1.1.0 |
 | scan.lua | 1.0.1 |
 | update.lua | 1.0.6 |
 | cast_check.lua | 1.1.0 |
@@ -79,3 +79,8 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Check Cast Chest now saves cast_availability.txt on every scan, including scan errors.
 - Gear UI flags missing required casts in red and report problems in amber; tapping explains the issue.
 - Queue submission and each new cast recheck cast availability.
+
+### Bulk station cast delivery
+- Station Setup S previews and sends one available matching cast to each assigned table.
+- Skips missing, ambiguous, disabled, conflicting, disconnected or occupied destinations.
+- Saves per-role results in station_delivery_report.txt; uncertain transfers stop the batch.

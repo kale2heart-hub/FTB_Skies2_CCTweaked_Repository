@@ -1,6 +1,6 @@
--- @crafting-center {"version":"1.0.2","suite":"crafting-center","id":"stations","title":"Station Setup","args":[],"description":"Assign cast stations and test template insertion.","dependencies":["gear_config.lua"],"category":"Console Scripts"}
--- Dedicated casting-station setup and ONE-template insertion test.
--- Only T transfers an item; no command sends fluid or starts casting.
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"stations","title":"Station Setup","args":[],"description":"Assign cast stations, send available casts to their tables, and test insertion.","dependencies":["gear_config.lua"],"locks":["casting-state"],"category":"Console Scripts"}
+-- Dedicated station setup, bulk cast delivery and one-template insertion tests.
+-- No operation sends fluid or starts casting.
 local ROOT=fs.getDir(shell.getRunningProgram())
 local path=fs.combine(ROOT,"gear_stations.txt")
 local configPath=fs.combine(ROOT,"gear_config.lua")
@@ -12,6 +12,23 @@ local castNames={"Ingot","Nugget","Gem","Gear","Rod","Plate",
   "Slingshot","Arrow","Ring","Bracelet","Necklace","Helmet","Chestplate",
   "Leggings","Boots","Shield","Tool Rod","Tip"}
 assert(#castNames==40,"Expected exactly 40 table casts")
+local ignored={cast=true,casts=true,casting=true,template=true,templates=true,
+ blueprint=true,mold=true,mould=true,head=true,main=true,blade=true,blades=true}
+local function normalize(value)
+ local words={}
+ value=value:lower():gsub("^.*:",""):gsub("[^%w]"," "):gsub("_"," ")
+ for word in value:gmatch("%S+") do if not ignored[word] then words[#words+1]=word end end
+ return table.concat(words,"")
+end
+local aliases={}
+for _,role in ipairs(castNames) do aliases[normalize(role)]=role end
+aliases.leggins="Leggings"; aliases.shear="Shears"; aliases.prospectinghammer="Prospector Hammer"
+aliases.tipupgrade="Tip"; aliases.toolhandle="Tool Rod"
+local function castLike(value)
+ value=value:lower()
+ return value:find("cast",1,true) or value:find("template",1,true) or value:find("blueprint",1,true)
+  or value:find("mold",1,true) or value:find("mould",1,true)
+end
 local function planned(role,index)
   return {peripheral="productivemetalworks:casting_"..(index+1),
     part=index<=6 and "Material" or (role=="Tool Rod" or role=="Tip") and role or "Main",
@@ -186,6 +203,105 @@ local function transferTest()
   back()
   openReport(lines)
 end
+local bulkPlan,bulkLines={},{}
+local bulkSource=C.castChest or "sophisticatedstorage:chest_1"
+local function matchingRole(item,slot)
+ local ok,info=pcall(invoke,bulkSource,"getItemDetail",slot)
+ local label=ok and type(info)=="table" and info.displayName or item.name
+ local override=(C.castItemMap or {})[item.name]
+ if override then return aliases[normalize(override)] end
+ local a,b=aliases[normalize(item.name)],aliases[normalize(label)]
+ if a and b and a~=b then return nil end
+ return (castLike(item.name) or castLike(label)) and (b or a) or nil
+end
+local function checkDestination(role,target)
+ local station=bindings[role]
+ if not station or station.peripheral~=target or station.enabled==false then error("Assignment changed or disabled",0) end
+ if not target or target=="" then error("No assigned table",0) end
+ if target==bulkSource then error("Source and target are the same",0) end
+ if target=="productivemetalworks:casting_1" then error("Manual table is reserved",0) end
+ for other,binding in pairs(bindings) do
+  if other~=role and binding.peripheral==target then error("Table also assigned to "..other,0) end
+ end
+ if not peripheral.isPresent(target) then error("Table disconnected",0) end
+ if next(invoke(target,"list")) then error("Table output occupied",0) end
+ for _,tank in pairs(invoke(target,"tanks")) do
+  if (tank.amount or 0)>0 then error("Table contains fluid",0) end
+ end
+end
+local function previewBulk()
+ bulkPlan={}; bulkLines={"SEND AVAILABLE CASTS TO ASSIGNED TABLES","Source: "..bulkSource,
+  "One cast per role. Uses current assignments, not a new plan.",
+  "Use physically cast-free tables; installed casts are hidden.",""}
+ local candidates={}
+ for slot,item in pairs(invoke(bulkSource,"list")) do
+  local role=matchingRole(item,slot)
+  if role then
+   candidates[role]=candidates[role] or {}
+   candidates[role][#candidates[role]+1]={slot=slot,item=item}
+  else bulkLines[#bulkLines+1]="SKIP slot "..slot..": unrecognized "..item.name end
+ end
+ for _,role in ipairs(castNames) do
+  local entries=candidates[role] or {}
+  table.sort(entries,function(a,b) return a.slot<b.slot end)
+  local target=bindings[role] and bindings[role].peripheral
+  local entry=entries[1]
+  local ambiguous=false
+  for _,other in ipairs(entries) do
+   if other.item.name~=entry.item.name or other.item.nbt~=entry.item.nbt then ambiguous=true end
+  end
+  local ok,reason=pcall(checkDestination,role,target)
+  if not entry then bulkLines[#bulkLines+1]="SKIP "..role..": no matching cast in chest"
+  elseif ambiguous then bulkLines[#bulkLines+1]="SKIP "..role..": different matching items; use single test"
+  elseif not ok then bulkLines[#bulkLines+1]="SKIP "..role..": "..tostring(reason)
+  else
+   bulkPlan[#bulkPlan+1]={role=role,target=target,slot=entry.slot,name=entry.item.name,nbt=entry.item.nbt}
+   bulkLines[#bulkLines+1]="SEND "..role.." | slot "..entry.slot.." -> "..shortName(target)
+  end
+ end
+ bulkLines[#bulkLines+1]=""
+ bulkLines[#bulkLines+1]="Ready: "..#bulkPlan.." casts. ENTER sends; B cancels."
+ bulkLines[#bulkLines+1]="No fluid sent. No automatic retries. Stop Gear UI casting first."
+ enter("bulk")
+end
+local function sendBulk()
+ -- Leave confirmation before any transfer so Enter cannot replay this plan.
+ local plan=bulkPlan; bulkPlan={}; back()
+ local lines={"BULK CAST DELIVERY RESULTS","Source: "..bulkSource}
+ local movedTotal=0
+ for _,entry in ipairs(plan) do
+  local attempted=false
+  local ok,result=pcall(function()
+   checkDestination(entry.role,entry.target)
+   local current=invoke(bulkSource,"list")[entry.slot]
+   if not current or current.name~=entry.name or current.nbt~=entry.nbt then error("Chest slot changed; preview again",0) end
+   if matchingRole(current,entry.slot)~=entry.role then error("Cast identity changed",0) end
+   attempted=true
+   return invoke(bulkSource,"pushItems",entry.target,entry.slot,1)
+  end)
+  if ok and result==1 then
+   movedTotal=movedTotal+1
+   lines[#lines+1]="MOVED "..entry.role.." -> "..shortName(entry.target)
+  elseif ok and result==0 then
+   lines[#lines+1]="REJECTED "..entry.role..": table did not accept the cast"
+  else
+   lines[#lines+1]=(attempted and "UNCERTAIN " or "SKIPPED ")..entry.role..": "..tostring(result)
+   if attempted then
+    lines[#lines+1]="Stopped batch. Inspect inventories before a new attempt."
+    break
+   end
+  end
+ end
+ lines[#lines+1]="Transferred: "..movedTotal.." / "..#plan
+ lines[#lines+1]="Visually verify installation; inventory transfer does not prove cast-slot placement."
+ lines[#lines+1]="No fluid sent. No automatic retry."
+ local ok,err=pcall(function()
+  local f=assert(fs.open(fs.combine(ROOT,"station_delivery_report.txt"),"w"))
+  f.write(table.concat(lines,"\n")); f.close()
+ end)
+ lines[#lines+1]=ok and "Saved station_delivery_report.txt" or "Report save failed: "..tostring(err)
+ openReport(lines)
+end
 local function chooseStation(name)
   if name=="productivemetalworks:casting_1" then U.notice="casting_1 is reserved for manual tests"; return end
   for other,station in pairs(bindings) do
@@ -241,6 +357,7 @@ local function detailLines()
       "Use a physically cast-free, empty destination.",
       "Installed casts are hidden from normal inventory access.",
       "ENTER: attempt one item transfer","B: cancel without moving anything","No fluid is sent; no retry is performed."}
+  elseif U.mode=="bulk" then return bulkLines
   elseif U.mode=="plan" then
     local lines={"FIXED 40-CAST PLAN","casting_0 = Block basin","casting_1 = Manual tests only",""}
     for i,role in ipairs(castNames) do local station=planned(role,i); lines[#lines+1]=shortName(station.peripheral).." = "..role.." ["..station.part.."]" end
@@ -290,7 +407,7 @@ local function render()
   if U.mode=="roles" then
     line(h-3,"Arrows/PgUp/PgDn select | Enter details")
     line(h-2,"P plan | E assign | T template | M manual")
-    line(h-1,"R refresh | A custom role | Q quit")
+    line(h-1,"S send all | R refresh | A role | Q quit")
   elseif U.mode=="detail" then
     line(h-3,"E assign | U unassign | D inspect")
     line(h-2,"T template test | M manual-table test")
@@ -303,6 +420,10 @@ local function render()
     line(h-3,"Enter: transfer ONE item | B: cancel")
     line(h-2,"No fluid sent. No automatic retry.")
     line(h-1,"Arrows/pages scroll | Q quit")
+  elseif U.mode=="bulk" then
+    line(h-3,"Enter: send available casts | B: cancel")
+    line(h-2,"Arrows/pages scroll | No fluid sent")
+    line(h-1,"Q quit")
   elseif U.mode=="plan" then
     line(h-3,"Enter applies fixed 2-41 assignments")
     line(h-2,"Casts are not physically installed.")
@@ -335,6 +456,7 @@ local function handle(key,capacity)
       table.sort(items,function(a,b) return a.slot<b.slot end)
     end
     U.notice="Refreshed"
+  elseif key==keys.s and U.mode=="roles" then previewBulk()
   elseif key==keys.p and U.mode=="roles" then enter("plan")
   elseif key==keys.a and U.mode=="roles" then customRole()
   elseif (key==keys.e or key==keys.t or key==keys.m) and (U.mode=="roles" or U.mode=="detail") then
@@ -353,6 +475,7 @@ local function handle(key,capacity)
     elseif U.mode=="stations" and names[U.selected] then chooseStation(names[U.selected])
     elseif U.mode=="templates" and items[U.selected] then testItem=items[U.selected]; enter("test")
     elseif U.mode=="test" then transferTest()
+    elseif U.mode=="bulk" then sendBulk()
     elseif U.mode=="plan" then report=applyPlan(); refresh(); U.mode="report"; U.offset=0; U.notice="Plan saved; casts still need installation" end
   end
 end

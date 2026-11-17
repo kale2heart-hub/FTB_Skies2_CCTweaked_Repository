@@ -98,3 +98,11 @@ when pressed. Missing/invalid reports are amber. Block uses a basin without a
 cast. Gear, tool parts and live Other casting use the report.
 The report only covers chest contents, not installed casts, station readiness,
 or recipe compatibility. Refresh after changing chest stock.
+
+Station Setup: S opens Send All preview using current assignments. Enter sends
+one recognized cast per role, skipping unsafe or unavailable destinations.
+Results are saved in station_delivery_report.txt. Unknown/ambiguous items stay
+in the chest. casting_1 is reserved; the Block basin needs no cast. Stop casting
+and use physically cast-free tables. Transfer success requires visual verification
+because installed casts are hidden from inventory access. Rerunning is an explicit
+new attempt, so check installed casts before repeating bulk delivery.
