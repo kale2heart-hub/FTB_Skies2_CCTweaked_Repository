@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"gear_chest_data","title":"Silent Gear Chest Part Data","launchable":false,"description":"Finished-part IDs and material rules from FTB Skies 2 1.25.3."}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"gear_chest_data","title":"Silent Gear Chest Part Data","launchable":false,"description":"Finished-part IDs and material rules from FTB Skies 2 1.25.3."}
 -- Source: installed FTB Skies 2 1.25.3 material definitions and compound-part recipes.
 -- Only exact item/tag ingredients with an explicit compatible part property are included.
 return {packVersion="1.25.3",parts={
@@ -41,6 +41,31 @@ return {packVersion="1.25.3",parts={
   {tag="c:ingots/gold",materialId="silentgear:gold"},
   {tag="c:ingots/netherite",materialId="silentgear:netherite"},
   {tag="c:gems/prismarine",materialId="silentgear:prismarine"},
+  {tag="c:ingots/uru_metal",materialId="sgearmetalworks:uru_metal"},
+ }},
+ ["Tip"]={finished="silentgear:tip",amount=1,extras={},materials={
+  {tag="c:gems/amethyst",materialId="silentgear:amethyst"},
+  {tag="c:ingots/azure_electrum",materialId="silentgear:azure_electrum"},
+  {tag="c:ingots/azure_silver",materialId="silentgear:azure_silver"},
+  {tag="c:ingots/blaze_gold",materialId="silentgear:blaze_gold"},
+  {tag="c:ingots/bronze",materialId="silentgear:bronze"},
+  {tag="c:ingots/copper",materialId="silentgear:copper"},
+  {tag="c:ingots/crimson_iron",materialId="silentgear:crimson_iron"},
+  {tag="c:ingots/crimson_steel",materialId="silentgear:crimson_steel"},
+  {tag="c:gems/diamond",materialId="silentgear:diamond"},
+  {item="silentgear:custom_gem",materialId="silentgear:dimerald"},
+  {tag="c:gems/emerald",materialId="silentgear:emerald"},
+  {item="minecraft:flint",materialId="silentgear:flint"},
+  {tag="c:dusts/glowstone",materialId="silentgear:glowstone"},
+  {tag="c:ingots/gold",materialId="silentgear:gold"},
+  {tag="c:ingots/iron",materialId="silentgear:iron"},
+  {tag="c:gems/lapis",materialId="silentgear:lapis_lazuli"},
+  {tag="c:gems/quartz",materialId="silentgear:quartz"},
+  {tag="c:dusts/redstone",materialId="silentgear:redstone"},
+  {tag="c:ingots/refined_glowstone",materialId="silentgear:refined_glowstone"},
+  {tag="c:ingots/refined_obsidian",materialId="silentgear:refined_obsidian"},
+  {tag="c:ingots/tyrian_steel",materialId="silentgear:tyrian_steel"},
+  {tag="c:ingots/meat",materialId="sgearmetalworks:meat"},
   {tag="c:ingots/uru_metal",materialId="sgearmetalworks:uru_metal"},
  }},
 }}

@@ -62,8 +62,8 @@ view identifies script/dependency differences.
 Other supports Ingot/Nugget/Gem/Gear/Rod/Plate/Block jobs on assigned dedicated
 stations. Station assignment and material costs must match the installed casts
 and pack recipes. Table casts remain physically installed; cast swapping via
-normal inventory APIs is not assumed. Equipment and Silent Gear tool-part
-recipes are still being mapped and retain demo/request-only behavior.
+normal inventory APIs is not assumed. Tool Parts and supported Gear kits now
+use the live routes described below; final equipment assembly is manual.
 
 See [METADATA.md](METADATA.md) for discovery, versions and parity, and
 [station_map.md](station_map.md) for the 40-table plan.
@@ -78,7 +78,7 @@ managed programs and shell tabs.
 
 Maintain code directly in the local GitHub checkout. Major build changes are
 recorded in [CHANGELOG.md](CHANGELOG.md), while metadata versions track each
-changed script. The current 1.1.0 build is local/unreleased until published.
+changed script. Current changes remain local/unreleased until published.
 
 ## Cast chest audit
 
@@ -226,7 +226,7 @@ Diamond 200 mB, and an Obsidian Tool Rod takes 2,000 mB. Supported stock can dif
 if the server has changed datapacks; use overrides for those changes.
 
 These produce standalone parts for manual assembly. Chest Tool Parts are supported
-by the delivery routes below; Gear equipment requests remain demo/request-only. The known
+by the delivery routes below; Gear kit requests can queue these components together. The known
 case where a player manually removes output before delivery remains deferred.
 
 ## Chest-supplied Tool Parts (1.6.0)
@@ -246,5 +246,32 @@ sent items in the output chest. No casting fluid is used for chest deliveries.
 The shared casting_test_state.txt journal also records these delivery jobs.
 
 liveChestParts=false disables these routes. Inventory scanning stays in the
-background; menu drawing never scans the chest. Equipment/Gear kit assembly is
-still the next stage, and the known manual table-output removal issue is deferred.
+background; menu drawing never scans the chest. Gear kit delivery is described below. The known manual table-output removal
+issue remains deferred.
+
+## Live Gear part kits (2.0.0)
+
+Choose Gear, an equipment item, and the material for each required/optional part.
+Main and Tool Rod use compatible molten stock; selected chest parts can be ready
+parts or material bundles for manual crafting. Review quantity and queue the kit.
+Every kit's casts are followed by its chest bundle before the next kit begins.
+The queue lists component jobs, not finished equipment; final assembly stays manual.
+
+Whole-request checks combine shared resources, such as iron for both Main and
+Tool Rod, or string for Cord and Binding. Existing queued jobs reserve their stock.
+Nothing is enqueued when a required part, enabled station or shared resource is
+missing. Required table errors block dependent Gear requests. Component jobs retain
+normal cancellation/recovery, including exact item/NBT chest delivery.
+
+There are 32 supported Gear casting profiles from the installed pack. Ranged
+items require Cord, Arrows require Fletching, and armor requires Lining under the
+Crafting Center's existing policy. Mace has no configured live recipe/station
+profile; Elytra has no verified casting recipe. Their buttons explain this.
+Jewelry Setting remains an optional None-only placeholder until its material rule
+is verified. Other mapped extras remain selectable. Set liveGearKits=false to
+return to the earlier demo/request-only Gear behavior.
+
+gear_kit_data.lua records exact primary casting amounts/output IDs; gear_request.lua
+plans the grouped jobs without inventory/file reads during drawing. All three
+monitors keep the same selection and request queue. Existing queue batches remain
+compatible. The new helpers are included in updater 1.2.0.

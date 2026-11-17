@@ -151,3 +151,8 @@ chest_delivery.lua (v1.0.0). Chest queue batches use kind="chest" with source/ou
 chests and exact item/NBT components. Casting batches retain their existing schema.
 The job journal records delivered quantities per component and transfer intent;
 recovery never re-sends a component whose successful delivery was recorded.
+
+Gear UI 2.0.0 adds gear_kit_data.lua and gear_request.lua to its helper dependencies.
+Kit requests append ordinary casting/chest batches with requestId, requestItem,
+kitNumber, kitTotal and partName metadata. Each has its own persistent job token;
+existing queue formats remain valid. Preview planning uses cached stock only.

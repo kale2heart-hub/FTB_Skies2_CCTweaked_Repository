@@ -36,18 +36,20 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.2.2 |
-| gear_ui.lua | 1.6.0 |
+| gear_ui.lua | 2.0.0 |
 | station_setup.lua | 1.2.2 |
 | scan.lua | 1.0.1 |
-| update.lua | 1.1.0 |
+| update.lua | 1.2.0 |
 | cast_check.lua | 1.2.1 |
-| cast_tracking.lua | 1.1.5 |
+| cast_tracking.lua | 1.1.6 |
 | casting_recovery.lua | 1.0.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
-| gear_config.lua | 1.2.0 |
+| gear_config.lua | 1.3.0 |
 | gear_casting_data.lua | 1.0.0 |
-| gear_chest_data.lua | 1.0.0 |
+| gear_kit_data.lua | 1.0.0 |
+| gear_request.lua | 1.0.0 |
+| gear_chest_data.lua | 1.1.0 |
 | chest_catalog.lua | 1.0.0 |
 | chest_delivery.lua | 1.0.0 |
 | gear_demo.lua | 1.0.0 |
@@ -205,3 +207,23 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Per-component delivery journals let Resume continue a known partial bundle without resending completed components. Uncertain transfers require inspection instead of automatic repetition.
 - Parts scanning runs in the background; rendering uses cached material rules and stock. These routes use real storage even with demoMode=true.
 - Added gear_chest_data.lua, chest_catalog.lua and chest_delivery.lua; updater 1.1.0 includes them.
+
+## 2.0.0 - Live Gear part kits (Unreleased)
+
+Date: 2026-11-17
+
+- 32 Gear entries now queue their main cast, required rod/cord/fletching/lining,
+  and selected compatible chest extras for manual assembly.
+- Main casting costs, required part types and output IDs come from the locally
+  installed FTB Skies 2 1.25.3 recipes. Armor Lining remains required by user policy.
+- Per-part material menus use real compatible stock even while demoMode is enabled.
+- Validate combined fluid/chest demand and queued reservations before adding any
+  component jobs. Each kit's casting jobs and chest bundle remain together in FIFO order.
+- All jobs share the existing progress, recovery, table locks, cancellation and
+  persistence mechanisms; kit/request identifiers are recorded in queue batches.
+- Output IDs explicitly classify Boots, Leggings, Fishing Rod and Shears components
+  whose names differ from menu labels.
+- Added optional chest-supplied Tip rules; standalone Tip casting remains unchanged.
+- Mace and Elytra explain unavailable routes. Jewelry Setting remains a placeholder
+  until its manual-assembly material rule is verified; None is still permitted.
+- Added gear_kit_data.lua and gear_request.lua; updater 1.2.0 includes both.

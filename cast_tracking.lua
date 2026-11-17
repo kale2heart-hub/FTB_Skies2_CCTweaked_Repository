@@ -1,6 +1,13 @@
--- @crafting-center {"version":"1.1.5","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
+-- @crafting-center {"version":"1.1.6","suite":"crafting-center","id":"cast_tracking","title":"Cast Tracking","launchable":false,"description":"Shared chest stock, installation records and output checks."}
 return function(root,C)
  local T={}
+ local outputRoles={["silentgear:rod"]="Tool Rod"}
+ function T.registerOutputs(role,outputs)
+  for _,id in ipairs(outputs) do
+   assert(not outputRoles[id] or outputRoles[id]==role,"Ambiguous cast output ID: "..id)
+   outputRoles[id]=role
+  end
+ end
  local statePath=fs.combine(root,"cast_installations.txt")
  local roles={"Ingot","Nugget","Gem","Gear","Rod","Plate","Sword","Katana","Machete","Spear","Trident","Knife","Dagger","Pickaxe","Shovel","Axe","Paxel","Hammer","Excavator","Hoe","Mattock","Prospector Hammer","Saw","Sickle","Shears","Fishing Rod","Bow","Crossbow","Slingshot","Arrow","Ring","Bracelet","Necklace","Helmet","Chestplate","Leggings","Boots","Shield","Tool Rod","Tip"}
  local ignored={cast=true,casts=true,casting=true,template=true,templates=true,blueprint=true,mold=true,mould=true,head=true,main=true,blade=true,blades=true}
@@ -320,7 +327,7 @@ return function(root,C)
   local detected={};for _,candidate in ipairs(roles) do detected[#detected+1]=candidate end
   detected[#detected+1]="Block"
   table.sort(detected,function(a,b) return #a>#b end)
-  local actual=item.name=="silentgear:rod" and "Tool Rod" or nil
+  local actual=outputRoles[item.name]
   if not actual then
    for _,candidate in ipairs(detected) do
     if contains(item.name,candidate) or contains(label,candidate) then actual=candidate;break end

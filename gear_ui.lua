@@ -1,6 +1,6 @@
--- @crafting-center {"version":"1.6.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"2.0.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
--- Crafting Center UI: live Other + Tool Rod/Tip queues; equipment assembly remains a later stage.
+-- Live casting and chest-delivery queues, including Gear part kits for manual assembly.
 local ROOT = fs.getDir(shell.getRunningProgram())
 local C = dofile(fs.combine(ROOT, "gear_config.lua"))
 local Cast=dofile(fs.combine(ROOT,"cast_tracking.lua"))(ROOT,C)
@@ -9,6 +9,9 @@ local gearCastingData=dofile(fs.combine(ROOT,"gear_casting_data.lua"))
 local chestPartData=dofile(fs.combine(ROOT,"gear_chest_data.lua"))
 local makeChestCatalog=dofile(fs.combine(ROOT,"chest_catalog.lua"))
 local deliverChest=dofile(fs.combine(ROOT,"chest_delivery.lua"))
+local gearKitData=dofile(fs.combine(ROOT,"gear_kit_data.lua"))
+local planGearRequest=dofile(fs.combine(ROOT,"gear_request.lua"))
+for role,profile in pairs(gearKitData.profiles) do gearCastingData.parts[role]=profile;Cast.registerOutputs(role,profile.outputs) end
 local chestCatalog
 local categories = {"Weapon", "Armor", "Tool", "Accessory", "Extra"}
 local catalog = {
@@ -47,10 +50,14 @@ end
 local function liveCastRoute()
   return liveCastingEnabled() and (S.category=="Other" or liveToolPart()) and castStations[S.item] and castStations[S.item].enabled~=false
 end
-local function liveChestRoute(item,category)
-  return C.liveChestParts~=false and (category or S.category)=="Other Tool Parts" and chestPartData.parts[item or S.item]~=nil
+local function liveGearRoute(item,category)
+  category=category or S.category
+  return C.liveGearKits~=false and liveCastingEnabled() and (category=="Weapon" or category=="Armor" or category=="Tool" or category=="Accessory" or category=="Extra")
 end
-local function liveRequest() return liveCastRoute() or liveChestRoute() end
+local function liveChestRoute(item,category)
+  return not liveToolPart(item,category) and C.liveChestParts~=false and (category or S.category)=="Other Tool Parts" and chestPartData.parts[item or S.item]~=nil
+end
+local function liveRequest() return liveCastRoute() or liveChestRoute() or liveGearRoute() end
 local function castSelection()
   return S.selected[S.category=="Other" and "Material" or S.item]
 end
@@ -79,7 +86,7 @@ local function ingotMapping(fluid,label)
   return {label=label,amount=90,outputs={},automatic=true}
 end
 local function liveFluidMenu()
-  return (S.category=="Other" and C.autoDiscoverMolten~=false) or liveToolPart()
+  return (S.category=="Other" and C.autoDiscoverMolten~=false) or liveToolPart() or liveGearRoute()
 end
 local gemMaterials={amethyst=true,diamond=true,emerald=true,lapis=true,lapiz=true,quartz=true,fluxite=true,ender=true}
 local function castMapping(shape,fluid,label)
@@ -108,7 +115,7 @@ local function acceptedOutput(name,outputs)
   for _,id in ipairs(outputs or {}) do if name==id then return true end end
   return false
 end
-local startLiveCast,startChestDelivery,drawJob,drawWelcome
+local startLiveCast,startChestDelivery,startGearRequest,drawJob,drawWelcome
 local JOB_STATE=fs.combine(ROOT,"casting_test_state.txt")
 local function previousJob()
   if not fs.exists(JOB_STATE) then return nil end
@@ -182,6 +189,10 @@ local function part(name, required, source)
 end
 local function recipe(item,category)
   item=item or S.item; category=category or S.category
+  if liveGearRoute(item,category) then
+    local profile=gearKitData.profiles[item]
+    return {verified=profile~=nil,parts=profile and profile.parts or {}}
+  end
   if liveChestRoute(item,category) then return {verified=true,parts={part(item,true,"chest")}} end
   if liveToolPart(item,category) then return {verified=true,parts={part(item,true,"fluid")}} end
   local configured = C.recipes[item]
@@ -229,6 +240,7 @@ local function castStockWorker()
  end
 end
 local function castProblem(item,category,selected)
+ if liveGearRoute(item,category) and not gearKitData.profiles[item] then return gearKitData.unsupported[item] or "No verified casting route for this item",colors.red end
  local needed={}
  if category=="Other" then
   if item=="Block" then
@@ -334,6 +346,13 @@ local function refreshStock()
       end
     end
   end
+  if liveGearRoute() then
+    for k,value in pairs(chestCatalog.stock) do stock[k]=value end
+    if chestCatalog.error then
+      for _,p in ipairs(recipe().parts) do if p.source=="chest" and (p.required or S.selected[p.name]) then errors[#errors+1]=chestCatalog.error;break end end
+    end
+    return
+  end
   for _,item in pairs((S.category~="Other" and not liveToolPart() and readPeripheral(C.partsChest,"list")) or {}) do
     local k=key("chest",item.name,item.nbt)
     stock[k]=(stock[k] or 0)+item.count
@@ -363,19 +382,33 @@ local function validRule(r,p)
     and type(r.id)=="string" and type(r.name)=="string"
     and type(r.amount)=="number" and r.amount>0
 end
+local kitChestRules={}
 local function options(p)
   local result={}
   local rules=liveChestRoute() and (chestCatalog.rules[S.item] or {}) or C.rules
-  if S.category=="Other" or liveToolPart() then
+  if liveGearRoute() and p.source=="chest" then
+    rules={}
+    for _,base in ipairs(chestCatalog.rules[p.name] or {}) do
+      local id=S.item.."|"..p.name.."|"..base.id
+      local r=kitChestRules[id]
+      if not r then
+        r={};for k,v in pairs(base) do r[k]=v end
+        r.id="kit:"..id;r.item=S.item;r.part=p.name;kitChestRules[id]=r
+      end
+      rules[#rules+1]=r
+    end
+  end
+  if S.category=="Other" or liveToolPart() or (liveGearRoute() and p.source=="fluid") then
     rules={}
     for name,fluid in pairs(fluidStock) do
-      local mapping=(liveCastRoute() or liveToolPart()) and castMapping(S.item,name,fluid.label) or nil
-      local amount=mapping and (mapping.amount or 90) or castingAmount(S.item,fluid.label)
+      local shape=liveGearRoute() and (p.shape or p.name) or S.item
+      local mapping=(liveCastRoute() or liveToolPart() or liveGearRoute()) and castMapping(shape,name,fluid.label) or nil
+      local amount=mapping and (mapping.amount or 90) or (not liveGearRoute() and castingAmount(S.item,fluid.label) or nil)
       if amount then
-        local id=S.item.."|"..name
+        local id=S.item.."|"..(liveGearRoute() and p.name.."|" or "")..name
         local r=castingRules[id]
         if not r then
-          r={id="casting:"..id,item=S.item,part=S.category=="Other" and "Material" or S.item,label=mapping and mapping.label or fluid.label,
+          r={id="casting:"..id,item=S.item,part=liveGearRoute() and p.name or S.category=="Other" and "Material" or S.item,label=mapping and mapping.label or fluid.label,
             source="fluid",name=name,amount=amount}
           castingRules[id]=r
         end
@@ -396,9 +429,29 @@ local function options(p)
   table.insert(result,1,{none=true,label="None",source=p.source})
   return result
 end
+local function gearPlanContext(preview)
+ return {preview=preview,key=key,stock=stock,stations=castStations,mapping=castMapping,
+  reservedFluid=reservedFluid,reservedChest=reservedChest,available=ruleAvailable,
+  partsChest=C.partsChest,outputChest=C.outputChest,chestEnabled=C.liveChestParts~=false}
+end
 local function validate()
   local issue=castProblem(S.item,S.category,S.selected)
   if issue then return false,issue end
+  if liveGearRoute() then
+    for _,p in ipairs(recipe().parts) do
+      local r=S.selected[p.name]
+      if p.required and not r then return false,"Select required: "..p.name end
+      if r then
+        local valid=false
+        for _,candidate in ipairs(options(p)) do if candidate==r and validRule(r,p) then valid=true;break end end
+        if not valid then return false,"Material no longer available: "..p.name end
+      end
+    end
+    if #errors>0 then return false,"Storage read failed; check source connections" end
+    local ok,result=pcall(planGearRequest,S.item,recipe(),S.selected,S.quantity,gearPlanContext(true))
+    if not ok then return false,tostring(result) end
+    return true,"LIVE: "..S.quantity.." "..S.item.." kits for manual assembly"
+  end
   local demands={}
   for _,p in ipairs(recipe().parts) do
     local r=S.selected[p.name]
@@ -594,6 +647,7 @@ local function saveRequest()
   refreshStock()
   local ok,reason=validate()
   if not ok then S.message=reason; return end
+  if liveGearRoute() then startGearRequest();return end
   if liveChestRoute() then startChestDelivery(); return end
   if liveCastRoute() then startLiveCast(); return end
   local request={status=C.demoMode and "demo_only" or "awaiting_production_adapter", demo=C.demoMode==true,item=S.item,category=S.category,parts={}}
@@ -720,7 +774,7 @@ local function render()
         m.setBackgroundColor((y==1 and (Q.paused or S.screen=="castIssue")) and colors.red or bg or colors.black); m.setTextColor(fg or colors.white)
         m.setCursorPos(ox+x,oy+y); m.write(centered(label,width))
       end
-      line(1,liveCastRoute() and ("LIVE | "..S.item.." Casting") or liveFluidMenu() and "PREVIEW | Live Molten Materials" or liveChestRoute() and "LIVE | Parts Chest Delivery" or C.demoMode and "DEMO | Sample stock & recipes" or "SILENT GEAR | Parts Builder",colors.blue)
+      line(1,liveCastRoute() and ("LIVE | "..S.item.." Casting") or liveGearRoute() and ("LIVE | "..S.item.." Parts Kit") or liveFluidMenu() and "PREVIEW | Live Molten Materials" or liveChestRoute() and "LIVE | Parts Chest Delivery" or C.demoMode and "DEMO | Sample stock & recipes" or "SILENT GEAR | Parts Builder",colors.blue)
       button(1,3,left,"<< Back",function() S.item=nil; S.selected={}; go("item") end)
       text(rightX,3,right,S.category.." > "..S.item,colors.blue)
       local missing={}
@@ -787,7 +841,7 @@ local function render()
         m.setBackgroundColor((y==1 and (Q.paused or S.screen=="castIssue")) and colors.red or bg or colors.black); m.setTextColor(fg or colors.white)
         m.setCursorPos(ox+x,oy+y); m.write(centered(label,width))
       end
-      line(1,liveCastRoute() and ("LIVE | "..S.item.." Casting") or liveFluidMenu() and "PREVIEW | Live Molten Materials" or liveChestRoute() and "LIVE | Parts Chest Delivery" or C.demoMode and "DEMO | Sample stock & recipes" or "SILENT GEAR | Parts Builder",colors.blue)
+      line(1,liveCastRoute() and ("LIVE | "..S.item.." Casting") or liveGearRoute() and ("LIVE | "..S.item.." Parts Kit") or liveFluidMenu() and "PREVIEW | Live Molten Materials" or liveChestRoute() and "LIVE | Parts Chest Delivery" or C.demoMode and "DEMO | Sample stock & recipes" or "SILENT GEAR | Parts Builder",colors.blue)
       button(1,3,left,"<< Back",function()
         if S.screen=="review" then go("part")
         elseif S.screen=="category" then S.category=nil; S.item=nil; go("main")
@@ -861,6 +915,25 @@ local function castCall(name,method,...)
   local ok,value=pcall(peripheral.call,name,method,...)
   if not ok then error(tostring(name).."."..method..": "..tostring(value),0) end
   return value
+end
+startGearRequest=function()
+  local old=previousJob()
+  if not Q.active and old and old.status~="done" then S.message="Previous job needs inspection";return end
+  local needsChest=false
+  for _,p in ipairs(recipe().parts) do if p.source=="chest" and (p.required or S.selected[p.name]) then needsChest=true;break end end
+  if needsChest then chestCatalog.scan() end
+  refreshStock();readCastReport(true)
+  local ok,reason=validate();if not ok then S.message=reason;return end
+  local planned,plan=pcall(planGearRequest,S.item,recipe(),S.selected,S.quantity,gearPlanContext(false))
+  if not planned then S.message=tostring(plan);return end
+  local requestId=Q.nextRequestId or 1
+  for _,batch in ipairs(plan) do
+    batch.id=Q.nextId or 1;Q.nextId=batch.id+1;batch.requestId=requestId
+    Q.batches[#Q.batches+1]=batch
+  end
+  Q.nextRequestId=requestId+1;saveQueue()
+  S.message="Queued "..S.quantity.." "..S.item.." kits ("..#plan.." jobs)";S.quantity=1
+  os.queueEvent("gear_cast_start")
 end
 startChestDelivery=function()
   chestCatalog.scan();refreshStock()
@@ -1651,7 +1724,7 @@ while true do
   elseif event=="gear_cast_availability" then
     os.queueEvent("gear_cast_stock_refresh")
   elseif event=="gear_cast_stock_ready" then
-    if liveChestRoute() then refreshStock() end
+    if liveChestRoute() or liveGearRoute() then refreshStock() end
     render()
   elseif event=="gear_job_update" then
     render()
