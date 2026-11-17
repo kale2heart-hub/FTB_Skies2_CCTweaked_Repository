@@ -1,10 +1,11 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"stations","title":"Station Setup","args":[],"description":"Assign cast stations, send available casts to their tables, and test insertion.","dependencies":["gear_config.lua"],"locks":["casting-state"],"category":"Console Scripts"}
+-- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"stations","title":"Station Setup","args":[],"description":"Assign cast stations, send available casts to their tables, and test insertion.","dependencies":["cast_tracking.lua","gear_config.lua"],"locks":["casting-state"],"category":"Console Scripts"}
 -- Dedicated station setup, bulk cast delivery and one-template insertion tests.
 -- No operation sends fluid or starts casting.
 local ROOT=fs.getDir(shell.getRunningProgram())
 local path=fs.combine(ROOT,"gear_stations.txt")
 local configPath=fs.combine(ROOT,"gear_config.lua")
 local C=fs.exists(configPath) and dofile(configPath) or {}
+local Cast=dofile(fs.combine(ROOT,"cast_tracking.lua"))(ROOT,C)
 local castNames={"Ingot","Nugget","Gem","Gear","Rod","Plate",
   "Sword","Katana","Machete","Spear","Trident","Knife","Dagger",
   "Pickaxe","Shovel","Axe","Paxel","Hammer","Excavator","Hoe","Mattock",
@@ -177,7 +178,13 @@ local function transferTest()
   local current=invoke(source,"list")[slot]
   if not current or current.name~=original.name or current.nbt~=original.nbt then error("Source changed; select the item again",0) end
   -- Exactly ONE insertion attempt. No fluid, casting or automatic retries.
+  local matched=Cast.match(current,(invoke(source,"getItemDetail",slot) or {}).displayName)
+  local assigned=bindings[roleContext] and bindings[roleContext].peripheral==target
+  if matched and assigned then Cast.record(matched,target,"pending","Single transfer started") end
   local moved=invoke(source,"pushItems",target,slot,1)
+  if matched and assigned then
+   Cast.record(matched,target,moved==1 and "installed" or moved==0 and "missing" or "pending","Single transfer result: "..tostring(moved))
+  end
   local lines={"ONE-TEMPLATE TRANSFER RESULT","Source: "..source,"Slot: "..slot,
     "Item: "..current.name,"Target: "..target,"Items moved: "..tostring(moved)}
   -- Post-transfer read errors must not invite a second attempt.
@@ -251,7 +258,10 @@ local function previewBulk()
    if other.item.name~=entry.item.name or other.item.nbt~=entry.item.nbt then ambiguous=true end
   end
   local ok,reason=pcall(checkDestination,role,target)
-  if not entry then bulkLines[#bulkLines+1]="SKIP "..role..": no matching cast in chest"
+  local status=target and Cast.status(role,target) or "missing"
+  if status=="installed" or status=="verified" then bulkLines[#bulkLines+1]="SKIP "..role..": already "..status
+  elseif status=="pending" or status=="suspect" then bulkLines[#bulkLines+1]="SKIP "..role..": inspect installation record"
+  elseif not entry then bulkLines[#bulkLines+1]="SKIP "..role..": no matching cast in chest"
   elseif ambiguous then bulkLines[#bulkLines+1]="SKIP "..role..": different matching items; use single test"
   elseif not ok then bulkLines[#bulkLines+1]="SKIP "..role..": "..tostring(reason)
   else
@@ -276,8 +286,12 @@ local function sendBulk()
    local current=invoke(bulkSource,"list")[entry.slot]
    if not current or current.name~=entry.name or current.nbt~=entry.nbt then error("Chest slot changed; preview again",0) end
    if matchingRole(current,entry.slot)~=entry.role then error("Cast identity changed",0) end
+   if Cast.installed(entry.role,entry.target) then error("Already installed",0) end
+   Cast.record(entry.role,entry.target,"pending","Bulk transfer started")
    attempted=true
-   return invoke(bulkSource,"pushItems",entry.target,entry.slot,1)
+   local moved=invoke(bulkSource,"pushItems",entry.target,entry.slot,1)
+   Cast.record(entry.role,entry.target,moved==1 and "installed" or moved==0 and "missing" or "pending","Bulk transfer result: "..tostring(moved))
+   return moved
   end)
   if ok and result==1 then
    movedTotal=movedTotal+1
@@ -348,7 +362,10 @@ local function detailLines()
       "Peripheral: "..tostring(station.peripheral),
       "Connected: "..tostring(peripheral.isPresent(station.peripheral or "")),"",
       "E: choose a station | U: unassign","D: inspect items, fluids and methods",
-      "T: test one template into this station","M: test into manual casting_1 instead","",
+      "T: test one template into this station","M: test into manual casting_1 instead",
+      "I: confirm installed | X: mark removed",
+      "Recorded: "..(station.peripheral and Cast.status(roleContext,station.peripheral) or "missing"),
+      Cast.location(station.peripheral),"",
       "Casts must match their intended station.","Bindings do not prove a cast is installed."}
   elseif U.mode=="test" then
     return {"ONE-TEMPLATE INSERTION TEST","Source: "..(C.castChest or "sophisticatedstorage:chest_1"),
@@ -410,7 +427,7 @@ local function render()
     line(h-1,"S send all | R refresh | A role | Q quit")
   elseif U.mode=="detail" then
     line(h-3,"E assign | U unassign | D inspect")
-    line(h-2,"T template test | M manual-table test")
+    line(h-2,"T test | M manual | I installed | X removed")
     line(h-1,"Arrows/pages scroll | B back | Q quit")
   elseif U.mode=="stations" or U.mode=="templates" then
     line(h-3,"Arrows/PgUp/PgDn select | Enter chooses")
@@ -464,6 +481,11 @@ local function handle(key,capacity)
     if not roleContext then return end
     if key==keys.e then refresh(); enter("stations")
     else openTemplates(key==keys.m and (C.manualCastingTable or "productivemetalworks:casting_1") or bindings[roleContext].peripheral) end
+  elseif (key==keys.i or key==keys.x) and U.mode=="detail" then
+    local target=bindings[roleContext].peripheral
+    if not target or target=="" then error("Assign a table first",0) end
+    Cast.record(roleContext,target,key==keys.i and "installed" or "missing","Manual confirmation in Station Setup")
+    U.notice="Saved "..roleContext.." installation state"
   elseif key==keys.u and U.mode=="detail" then
     bindings[roleContext].peripheral=""; save(); U.notice="Unassigned "..roleContext
   elseif key==keys.d and U.mode=="detail" then inspect()

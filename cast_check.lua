@@ -1,8 +1,29 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"cast_check","title":"Check Cast Chest","category":"Tools","args":[],"description":"Read the cast chest and show found, missing and unidentified casts against the 40-cast plan.","dependencies":["gear_config.lua"]}
+-- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"cast_check","title":"Check Cast Chest","category":"Tools","args":[],"description":"Read the cast chest and show found, missing and unidentified casts against the 40-cast plan.","dependencies":["cast_tracking.lua","gear_config.lua"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local configPath=fs.combine(ROOT,"gear_config.lua")
 local C=fs.exists(configPath) and dofile(configPath) or {}
+local Cast=dofile(fs.combine(ROOT,"cast_tracking.lua"))(ROOT,C)
 local CHEST=C.castChest or "sophisticatedstorage:chest_1"
+local bindings={}
+for role,station in pairs(C.castStations or {}) do bindings[role]=station end
+local bindingPath=fs.combine(ROOT,"gear_stations.txt")
+if fs.exists(bindingPath) then
+ local f=assert(fs.open(bindingPath,"r"));local saved=textutils.unserialize(f.readAll());f.close()
+ assert(type(saved)=="table","Unreadable gear_stations.txt")
+ for role,station in pairs(saved) do bindings[role]=station end
+end
+local function installation(role)
+ local station=bindings[role]
+ local target=station and station.peripheral
+ local ok,status,record=pcall(Cast.status,role,target)
+ return ok and status or "unreadable",target,record
+end
+local found
+local function usable(role)
+ local status=installation(role)
+ return found and found[role] or status=="installed" or status=="verified"
+end
+
 local required={"Ingot","Nugget","Gem","Gear","Rod","Plate","Sword","Katana","Machete",
  "Spear","Trident","Knife","Dagger","Pickaxe","Shovel","Axe","Paxel","Hammer",
  "Excavator","Hoe","Mattock","Prospector Hammer","Saw","Sickle","Shears","Fishing Rod",
@@ -27,18 +48,21 @@ local function castLike(value)
  return value:find("cast",1,true) or value:find("template",1,true) or value:find("blueprint",1,true)
   or value:find("mold",1,true) or value:find("mould",1,true)
 end
-local found,unknown,scanError={},{},nil
+local unknown,scanError={},nil
+found={}
 local count,stacks=0,0
 local view,selected,offset="missing",1,0
 local notice=""
 local detail
 local REPORT=fs.combine(ROOT,"cast_availability.txt")
 local function saveAvailability()
- local report={schema=1,chest=CHEST,checkedAt=os.epoch("utc"),valid=scanError==nil,
-  error=scanError,casts={},unknownCount=#unknown,scope="chest"}
+ local report={schema=2,chest=CHEST,checkedAt=os.epoch("utc"),valid=scanError==nil,
+  error=scanError,casts={},unknownCount=#unknown,scope="chest-and-installation-records"}
  for _,role in ipairs(required) do
+  local status,target,record=installation(role)
   report.casts[role]={available=scanError==nil and found[role]~=nil,
-   quantity=found[role] and found[role].quantity or 0}
+   quantity=found[role] and found[role].quantity or 0,
+   installed=status=="installed" or status=="verified",status=status,station=target,record=record}
  end
  local ok,err=pcall(function()
   local f=assert(fs.open(REPORT,"w")); f.write(textutils.serialize(report)); f.close()
@@ -71,7 +95,7 @@ local function scan()
    unknown[#unknown+1]=record
   end
  end
- for _,role in ipairs(required) do if found[role] then count=count+1; table.sort(found[role].slots,function(a,b) return a.slot<b.slot end) end end
+ for _,role in ipairs(required) do if usable(role) then count=count+1 end; if found[role] then table.sort(found[role].slots,function(a,b) return a.slot<b.slot end) end end
  table.sort(unknown,function(a,b) return a.slot<b.slot end)
  selected=1; offset=0; saveAvailability()
 end
@@ -83,8 +107,9 @@ local function entries()
  else
   for _,role in ipairs(required) do
    local entry=found[role]
-   if view=="all" or (view=="missing" and not entry) or (view=="found" and entry) then
-    rows[#rows+1]={role=role,label=(entry and "FOUND " or "MISSING ")..role..(entry and " x"..entry.quantity or "")}
+   if view=="all" or (view=="missing" and not usable(role)) or (view=="found" and usable(role)) then
+    local status=installation(role)
+    rows[#rows+1]={role=role,label=role.." | Chest "..(entry and entry.quantity or 0).." | "..status}
    end
   end
  end
@@ -104,7 +129,10 @@ local function inspect(entry)
    lines[#lines+1]="ID: "..item.name
    lines[#lines+1]="NBT: "..tostring(item.nbt)
   end end
-  lines[#lines+1]="Only this chest is checked; installed casts are not counted."
+  local status,target=installation(entry.role)
+  lines[#lines+1]="Installation: "..status
+  lines[#lines+1]="Table: "..Cast.location(target)
+  lines[#lines+1]="Installed state is recorded; expected output verifies it."
   if #unknown>0 then lines[#lines+1]="Unidentified items may include this cast. Inspect Unknown before assuming it is absent." end
  end
  detail=lines; offset=0
@@ -118,7 +146,7 @@ local function render()
  end
  if w<20 or h<10 then line(1,"Need terminal 20x10"); return 1,{} end
  local capacity=h-7
- line(1,"CAST CHEST CHECK | v1.1.0",colors.blue)
+ line(1,"CAST CHEST CHECK | v1.2.0",colors.blue)
  line(2,scanError and "Chest unreadable - no result" or ("Found "..count.."/40 | Missing "..(40-count).." | Unknown "..#unknown))
  line(3,detail and "DETAILS" or view:upper().." | "..CHEST)
  local rows=entries()
@@ -140,12 +168,12 @@ local function render()
    local index=page*capacity+row; local item=rows[index]
    if item then line(row+3,(index==selected and "> " or "  ")..item.label,index==selected and colors.blue or colors.black) end
   end
-  if #rows==0 then line(4,view=="missing" and "All 40 named casts detected." or "No entries in this view.") end
+  if #rows==0 then line(4,view=="missing" and "All 40 roles have chest stock or installation." or "No entries in this view.") end
  end
  line(h-3,"Arrows/pages | Enter details | B back")
  line(h-2,"M missing | F found | A all | U unknown")
  line(h-1,"R rescan | Q quit | Report auto-saved")
- line(h,notice~="" and notice or (#unknown>0 and "Unknown names may affect missing results." or "Checks chest only, not installed casts."),colors.gray)
+ line(h,notice~="" and notice or (#unknown>0 and "Unknown names may affect missing results." or "Chest stock + recorded installation."),colors.gray)
  return capacity,rows
 end
 scan()

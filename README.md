@@ -86,8 +86,8 @@ cast_check.lua is a read-only 40-cast inventory checker under Tools. It reads
 the configured castChest (chest_1 by default), compares registry/display names
 and shows Missing, Found, All and Unknown views. M/F/A/U switch views, R scans
 again, Enter/D shows details, B returns and Q exits. It counts unique cast
-types separately from duplicate stack quantities and checks only the chest,
-not casts already installed on tables. Unknown names are not guessed; review
+types separately from duplicate stack quantities. It combines chest stock with
+installation records for the current station assignments. Unknown names are not guessed; review
 them before treating an undetected cast as truly absent. No items or fluids
 are transferred. Cast names/aliases and exact-ID overrides can be extended
 when real pack items are inspected.
@@ -96,7 +96,7 @@ Cast checker saves local cast_availability.txt on startup and R refresh. Gear UI
 reloads it while running, flags missing required casts red, and shows details
 when pressed. Missing/invalid reports are amber. Block uses a basin without a
 cast. Gear, tool parts and live Other casting use the report.
-The report only covers chest contents, not installed casts, station readiness,
+The report covers chest contents and recorded installations, not station readiness
 or recipe compatibility. Refresh after changing chest stock.
 
 Station Setup: S opens Send All preview using current assignments. Enter sends
@@ -104,5 +104,19 @@ one recognized cast per role, skipping unsafe or unavailable destinations.
 Results are saved in station_delivery_report.txt. Unknown/ambiguous items stay
 in the chest. casting_1 is reserved; the Block basin needs no cast. Stop casting
 and use physically cast-free tables. Transfer success requires visual verification
-because installed casts are hidden from inventory access. Rerunning is an explicit
-new attempt, so check installed casts before repeating bulk delivery.
+because installed casts are hidden from inventory access. Recorded installations
+are skipped on repeated bulk delivery.
+
+Cast tracking now combines chest stock with cast_installations.txt. Station Setup
+records successful single/bulk deliveries and skips recorded installations on
+repeat bulk runs. In a role's details, I confirms installed and X marks removed.
+Use these for casts installed before tracking, or after manual changes. A transfer
+records installation; the expected cast output verifies it. Checker rescans keep
+these records and report chest quantity separately from installation status.
+Gear UI installs an available missing cast before fluid is sent. Pending/uncertain
+or suspect records require Station Setup inspection first. Casts are locked while
+cooling. No output after the delivery timeout flags inspection; it does not prove
+removal or trigger another pour. Wrong output is left on the table and pauses the
+queue with its row/side/position. Correct output is checked before normal and
+recovery collection. Installed records follow the physical table, not reassigned
+roles. Queue jobs keep their original station assignments.

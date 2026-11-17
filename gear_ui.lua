@@ -1,8 +1,9 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Crafting Center UI: dedicated Other casting queue; equipment remains demo.
 local ROOT = fs.getDir(shell.getRunningProgram())
 local C = dofile(fs.combine(ROOT, "gear_config.lua"))
+local Cast=dofile(fs.combine(ROOT,"cast_tracking.lua"))(ROOT,C)
 local categories = {"Weapon", "Armor", "Tool", "Accessory", "Extra"}
 local catalog = {
   -- Blades, blunt weapons, polearms, then ranged weapons.
@@ -169,7 +170,7 @@ local function readCastReport()
   if not f then error("Run Check Cast Chest to create the cast report",0) end
   local raw=f.readAll(); f.close()
   local report=textutils.unserialize(raw)
-  if type(report)~="table" or report.schema~=1 or type(report.casts)~="table" then error("Cast report unreadable; rescan cast chest",0) end
+  if type(report)~="table" or (report.schema~=1 and report.schema~=2) or type(report.casts)~="table" then error("Cast report unreadable; rescan cast chest",0) end
   if not report.valid then error("Cast chest scan failed; rescan cast chest",0) end
   if report.chest~=(C.castChest or "sophisticatedstorage:chest_1") then error("Cast chest changed; rescan cast chest",0) end
   return report
@@ -190,11 +191,19 @@ local function castProblem(item,category,selected)
  end
  if not next(needed) then return nil end
  readCastReport()
- if not castReport then return castReportError,colors.orange end
  local missing={}
  for role in pairs(needed) do
-  local entry=castReport.casts[role]
-  if type(entry)~="table" or entry.available~=true then missing[#missing+1]=role end
+  local station=castStations[role]
+  local target=station and station.peripheral
+  local ok,status=pcall(Cast.status,role,target)
+  if not ok then return tostring(status),colors.orange end
+  if status=="pending" or status=="suspect" then return "Inspect cast: "..Cast.location(target),colors.orange end
+  local installed=status=="installed" or status=="verified"
+  local entry=castReport and castReport.casts[role]
+  if not installed and (not entry or entry.available~=true) then
+   if not castReport then return castReportError,colors.orange end
+   missing[#missing+1]=role
+  end
  end
  table.sort(missing)
  if #missing>0 then return "Missing casts: "..table.concat(missing,", "),colors.red end
@@ -747,7 +756,7 @@ local function resumeQueue()
         local tableName=old.table
         local item=castCall(tableName,"list")[1]
         if not item then return false end
-        if not acceptedOutput(item.name,batch.outputs) then error("Unexpected output: "..item.name,0) end
+        Cast.checkOutput(batch.shape,tableName,item,batch.material,batch.outputs)
         if old.actualOutput and old.actualOutput~=item.name then error("Output changed during recovery",0) end
         old.actualOutput=item.name
         old.status="delivery_started"; writeJob(old)
@@ -758,7 +767,7 @@ local function resumeQueue()
         return true
       end)
       S.busy=false
-      if not ok then printError(delivered); S.message="Delivery stopped - check computer"; return end
+      if not ok then printError(delivered); S.message=tostring(delivered); return end
       if not delivered then S.message="Still cooling or output blocked; Resume retries delivery only"; return end
     end
     advanceQueue() -- Matching completed/recovered delivery counts exactly once.
@@ -864,6 +873,8 @@ local function castWorker()
       end
       if next(castCall(tableName,"list")) then error("Table output occupied",0) end
       if fluidTotal(tableName)>0 then error("Table already contains fluid",0) end
+      Cast.ensure(batch.shape,tableName,castStations)
+      castReportAt=-10
       local available=0
       for _,name in ipairs(sources) do available=available+fluidTotal(name,fluid) end
       if available<amount then error("Not enough molten "..batch.material,0) end
@@ -895,9 +906,7 @@ local function castWorker()
       repeat
         local item=castCall(tableName,"list")[1]
         if item then
-          if not acceptedOutput(item.name,batch.outputs) then
-            error("Unexpected output: "..item.name,0)
-          end
+          Cast.checkOutput(batch.shape,tableName,item,batch.material,batch.outputs)
           if journal.actualOutput and journal.actualOutput~=item.name then error("Output changed during delivery",0) end
           journal.actualOutput=item.name
           journal.status="delivery_started"; writeJob(journal)
@@ -914,12 +923,17 @@ local function castWorker()
         end
         sleep(0.5)
       until os.clock()>=deadline
-      error("Delivery timeout; inspect table/output chest",0)
+      if not castCall(tableName,"list")[1] then
+        if batch.shape~="Block" then Cast.record(batch.shape,tableName,"suspect","No output after casting timeout; cast may be removed") end
+        error("No output at "..Cast.location(tableName).."; check missing/removed cast or recipe. No new fluid sent.",0)
+      end
+      error("Output blocked at "..Cast.location(tableName),0)
     end)
     if not ok then
       printError(err)
       S.busy=false; Q.paused=true; Q.reason=tostring(err); saveQueue()
-      S.job={phase="error",progress=1,label="Stopped - check computer"}
+      S.job={phase="error",progress=1,label=tostring(err)}
+      S.issueReturn="queue"; S.castIssue=tostring(err); go("castIssue")
       os.queueEvent("gear_job_update")
     end
     end
@@ -1082,8 +1096,8 @@ local function renderSpecial()
       button(1,3,math.floor(W*.43),"<< Back",function() go(S.issueReturn or "item") end,colors.gray)
       local lines=wrapWords(S.castIssue or "Cast check needed",W-2)
       for i,line in ipairs(lines) do if 6+i<H-5 then text(6+i,line) end end
-      text(H-4,"Check Cast Chest > R to refresh")
-      text(H-2,"Report covers chest stock only")
+      text(H-4,"Check casts and Station Setup")
+      text(H-2,"Chest stock + recorded installation")
     elseif S.screen=="sectionItems" or S.screen=="category" or S.screen=="item" then
       local gearCategories=S.screen=="category"
       local title=gearCategories and "Gear" or S.section=="gear" and S.category or S.section=="parts" and "Tool Parts" or "Other | Casting"
@@ -1131,7 +1145,9 @@ local function renderSpecial()
           local waiting=batch.remaining-protect
           local y=7+(row-1)*3
           local labelWidth=W-15
-          button(1,y,labelWidth,batch.label.." x"..waiting,nil)
+          button(1,y,labelWidth,(Q.paused and "! " or "")..batch.label.." x"..waiting,Q.paused and function()
+            S.issueReturn="queue"; S.castIssue=Q.reason or "Queue paused"; go("castIssue")
+          end or nil)
           local id=batch.id
           button(labelWidth+2,y,5,"-1",waiting>0 and function() cancelWaiting(id,true) end or nil,colors.gray)
           button(labelWidth+8,y,8,"Remove",waiting>0 and function() cancelWaiting(id,false) end or nil,colors.red)

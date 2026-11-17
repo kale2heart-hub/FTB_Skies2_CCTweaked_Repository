@@ -36,11 +36,11 @@ Date: 2026-11-16
 | Script | Version |
 |---|---|
 | control_center.lua | 1.1.0 |
-| gear_ui.lua | 1.1.0 |
-| station_setup.lua | 1.1.0 |
+| gear_ui.lua | 1.2.0 |
+| station_setup.lua | 1.2.0 |
 | scan.lua | 1.0.1 |
-| update.lua | 1.0.6 |
-| cast_check.lua | 1.1.0 |
+| update.lua | 1.0.7 |
+| cast_check.lua | 1.2.0 |
 | casting_test.lua | 1.0.1 |
 | startup.lua | 1.0.0 |
 | gear_config.lua | 1.0.0 |
@@ -84,3 +84,11 @@ incremented. Do not claim a release or test result before it actually occurs.
 - Station Setup S previews and sends one available matching cast to each assigned table.
 - Skips missing, ambiguous, disabled, conflicting, disconnected or occupied destinations.
 - Saves per-role results in station_delivery_report.txt; uncertain transfers stop the batch.
+
+### Installed casts and output verification
+- Shared cast_tracking.lua tracks chest stock and recorded/verified installations.
+- Station Setup records deliveries; I/X confirms installed/removed in role details.
+- Cast checker preserves installed records when rescanning the chest.
+- Gear UI installs missing available casts, verifies output names before collection,
+  and pauses with physical table locations on wrong/missing output.
+- update.lua v1.0.7 includes the new shared helper.
