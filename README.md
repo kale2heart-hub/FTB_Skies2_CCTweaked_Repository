@@ -298,7 +298,7 @@ any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
 
-## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.4.0)
+## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.4.1)
 
 The two computers share a wired modem network. Liquid Resource Monitor owns the
 Functional Storage fluid supply and serializes transfers. Gear UI requests exact
@@ -476,3 +476,8 @@ or global errors can still pause the queue; this change does not bypass inspecti
 Existing queue files retain their per-basin casts. A persistent global pour
 sequence keeps interleaved jobs' receipts distinct and replay-safe. Update the
 Fluid Service along with the Fluid Monitor; both are in the normal updater.
+
+Fluid Monitor 1.4.1 gives every queued job its own output-ID list, fixing CC's
+repeated-table serialization error for multiple batches of the same fluid. It
+serializes before writing and recovers a valid primary checkpoint if an incomplete
+pending file was left behind, retaining that rejected file for inspection.

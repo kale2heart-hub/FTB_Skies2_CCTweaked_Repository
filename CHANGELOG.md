@@ -5,6 +5,17 @@ internal development labels have been consolidated into the entries below;
 1.2.1 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Fluid Monitor 1.4.1 - Queue serialization fix
+
+- Each new job copies its recipe output list. Multiple queued batches of the same
+  fluid no longer share a Lua table, which CC:Tweaked's serializer rejects.
+- Serialize state before opening the pending file, preventing this error from
+  creating an empty/truncated save.
+- An invalid pending save is retained as a rejected text file and the last valid
+  primary checkpoint is recovered. If neither is valid, stop for inspection.
+- Regression tests now use a strict repeated-reference serializer matching CC's
+  behavior and cover same-fluid queues, pending recovery and checkpoint protection.
+
 ## Fluid Monitor 1.4.0 - Use basins across the queue
 
 - All queued jobs share the configured basin pool. Free basins are assigned in

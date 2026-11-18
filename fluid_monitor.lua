@@ -1,5 +1,5 @@
--- @crafting-center {"version":"1.4.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
-local VERSION="1.4.0"
+-- @crafting-center {"version":"1.4.1","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
+local VERSION="1.4.1"
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -13,15 +13,31 @@ local displays,W,H={},math.huge,math.huge
 local palette={[colors.black]=0x101820,[colors.blue]=0x25394D,[colors.gray]=0x334155,[colors.lightGray]=0xAAB8C5,[colors.cyan]=0x176B80,[colors.green]=0x265F4B,[colors.red]=0x8B3545,[colors.white]=0xF0F5FA}
 local function loadState(name,default)
  local path=fs.combine(ROOT,name)
- if fs.exists(path..".pending") then path=path..".pending" end
+ local function read(p)
+  if not fs.exists(p) then return nil end
+  local f=assert(fs.open(p,"r"));local value=textutils.unserialize(f.readAll());f.close()
+  if type(value)~="table" then return nil end
+  if name=="fluid_jobs.txt" and (type(value.jobs)~="table" or type(value.nextId)~="number") then return nil end
+  return value
+ end
+ if fs.exists(path..".pending") then
+  local pending=read(path..".pending")
+  if pending then return pending end
+  local primary=read(path)
+  assert(primary,"Unreadable "..name.." and pending save; inspect before continuing")
+  local archive=path..".rejected-"..os.epoch("utc");local suffix=0
+  while fs.exists(archive..".txt") do suffix=suffix+1;archive=path..".rejected-"..os.epoch("utc").."-"..suffix end
+  fs.move(path..".pending",archive..".txt")
+  printError("Recovered "..name.." from last complete save; incomplete pending file retained for inspection")
+  return primary
+ end
  if not fs.exists(path) then return default end
- local f=assert(fs.open(path,"r"));local value=textutils.unserialize(f.readAll());f.close()
- assert(type(value)=="table","Unreadable "..name.."; inspect before continuing")
- return value
+ return assert(read(path),"Unreadable "..name.."; inspect before continuing")
 end
 local function saveState(name,value)
  local path=fs.combine(ROOT,name)
- local f=assert(fs.open(path..".pending","w"));f.write(textutils.serialize(value));f.close()
+ local content=textutils.serialize(value) -- Validate before opening/truncating the pending file.
+ local f=assert(fs.open(path..".pending","w"));f.write(content);f.close()
  local check=assert(fs.open(path..".pending","r"));local decoded=textutils.unserialize(check.readAll());check.close();assert(type(decoded)=="table","State save failed")
  if fs.exists(path) then fs.delete(path) end
  fs.move(path..".pending",path)
@@ -55,8 +71,9 @@ local function enqueue(fluid,shape,quantity,automatic)
  assert(#(c.basins or {})>0,"Assign managed basins in Network Setup")
  assert(c.blockOutputChest and c.blockOutputChest~="","Assign the block output chest in Network Setup")
  assert(type(quantity)=="number" and quantity>=1 and quantity<=64 and quantity==math.floor(quantity),"Quantity must be 1 to 64 whole blocks")
+ local outputs={};for i,id in ipairs(rule.outputs) do outputs[i]=id end
  Q.jobs[#Q.jobs+1]={mode="basin_blocks",id=Q.nextId,fluid=fluid,shape="Block",quantity=quantity,completed=0,
-  amount=rule.amount,outputs=rule.outputs,units={},remaining=rule.amount*quantity,total=rule.amount*quantity,automatic=automatic or false}
+  amount=rule.amount,outputs=outputs,units={},remaining=rule.amount*quantity,total=rule.amount*quantity,automatic=automatic or false}
  Q.nextId=Q.nextId+1;saveQueue();os.queueEvent("fluid_queue_changed")
 end
 local function cancelJob(index)

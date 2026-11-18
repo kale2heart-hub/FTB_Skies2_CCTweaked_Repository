@@ -27,3 +27,7 @@ fluid_jobs.txt
 fluid_jobs.txt.pending
 fluid_auto.txt
 fluid_auto.txt.pending
+
+# Retained incomplete in-game checkpoints
+fluid_jobs.txt.rejected-*.txt
+fluid_auto.txt.rejected-*.txt

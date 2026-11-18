@@ -5,11 +5,19 @@ R=Path(__file__).resolve().parents[1]
 l=LuaRuntime(unpack_returned_tuples=True)
 for name in ['fluid_network','fluid_client','fluid_service','fluid_monitor','network_setup','basin_casting','basin_casting_data']:l.globals()[name+'Source']=(R/(name+'.lua')).read_text()
 l.execute(r'''
+ printError=function() end
  now=100;files={};calls=0;pushes={};balances={a=100000,b=1000};limit=1000000;inject=false;epoch=100000
  os={clock=function() return now end,epoch=function() return epoch end,getComputerID=function() return 20 end,queueEvent=function() end}
- local function serialize(v)
-  if type(v)=='table' then local a={};for k,x in pairs(v) do a[#a+1]='['..serialize(k)..']='..serialize(x) end;return '{'..table.concat(a,',')..'}'
-  elseif type(v)=='string' then return string.format('%q',v) else return tostring(v) end
+ local function serialize(root)
+  local seen={}
+  local function encode(v)
+   if type(v)=='table' then
+    assert(not seen[v],'Cannot serialize table with repeated entries');seen[v]=true
+    local entries={};for k,x in pairs(v) do entries[#entries+1]='['..encode(k)..']='..encode(x) end
+    return '{'..table.concat(entries,',')..'}'
+   elseif type(v)=='string' then return string.format('%q',v) else return tostring(v) end
+  end
+  return encode(root)
  end
  textutils={serialize=serialize,unserialize=function(s) local f=load('return '..s);return f and f() end}
  fs={combine=function(a,b) return a..'/'..b end,getDir=function() return 'root' end,exists=function(p) return files[p]~=nil end,
@@ -623,6 +631,24 @@ l.execute(r"""
  findAction(picker.entries(),'[ ] #10')();assert(picker.config.clients[1]==10)
 """)
 print('PASS offline computer retained/red/removable, cold native selection, partner roles independent and no numeric input needed')
+
+l.execute(r"""
+ files['root/fluid_network.txt']=textutils.serialize({role='fluid',modem='left',monitors={'monitor_1'},sources={'store'},basins={'basin'},blockOutputChest='chest',clients={10}})
+ files['root/fluid_jobs.txt']=nil;files['root/fluid_jobs.txt.pending']=nil
+ local app=assert(load(appSource))()
+ app.enqueue('productivemetalworks:molten_iron','Block',1,false)
+ app.enqueue('productivemetalworks:molten_iron','Block',1,false)
+ assert(#app.Q.jobs==2 and app.Q.jobs[1].outputs~=app.Q.jobs[2].outputs)
+ assert(pcall(textutils.serialize,app.Q))
+ local primary=files['root/fluid_jobs.txt'];files['root/fluid_jobs.txt.pending']=''
+ app=assert(load(appSource))();assert(#app.Q.jobs==2 and files['root/fluid_jobs.txt']==primary and not files['root/fluid_jobs.txt.pending'])
+ local archived=false;for path,content in pairs(files) do if path:find('fluid_jobs.txt.rejected-',1,true) then archived=content=='' end end;assert(archived)
+ -- Unexpected repeated references must fail before touching the last complete checkpoint.
+ app.Q.jobs[2].outputs=app.Q.jobs[1].outputs
+ assert(not pcall(app.enqueue,'productivemetalworks:molten_iron','Block',1,false))
+ assert(files['root/fluid_jobs.txt']==primary and not files['root/fluid_jobs.txt.pending'])
+""")
+print('PASS strict CC serialization: same-material jobs own output arrays, queue saves reject shared references before opening pending file, incomplete pending save is retained and last complete queue recovers')
 for p in R.glob('*.lua'):
  ok,err=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,err)
 print('PASS all scripts compile in Lua 5.2')
