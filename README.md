@@ -298,7 +298,7 @@ any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
 
-## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.3.1)
+## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.4.0)
 
 The two computers share a wired modem network. Liquid Resource Monitor owns the
 Functional Storage fluid supply and serializes transfers. Gear UI requests exact
@@ -459,3 +459,20 @@ without a running application; role discovery requires the other computer's
 updated Setup screen or application to be open with its wired modem configured.
 Discovery never powers on/reboots computers, changes peer settings or grants
 casting access. Existing explicit partner IDs and assignment checks are retained.
+
+### Queue-wide basin utilization (Fluid Monitor 1.4.0)
+
+All configured basins are shared across queue entries. Earlier jobs get available
+capacity first; later jobs use remaining basins while those blocks cool. Completed
+jobs may therefore finish out of order, while each basin stays tied to its owning
+job until collection. The status area shows active/configured basin counts.
+
+Automatic casting keeps roughly a wave of waiting work available instead of
+waiting for the entire queue to empty. It rotates eligible fluids and accounts
+for unpoured quantities already queued. Each admission pass is bounded, and block
+pours still revalidate Gear reserves and actual fluid availability. Missing stock
+or global errors can still pause the queue; this change does not bypass inspection.
+
+Existing queue files retain their per-basin casts. A persistent global pour
+sequence keeps interleaved jobs' receipts distinct and replay-safe. Update the
+Fluid Service along with the Fluid Monitor; both are in the normal updater.

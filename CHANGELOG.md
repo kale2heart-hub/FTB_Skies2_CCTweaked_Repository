@@ -5,6 +5,22 @@ internal development labels have been consolidated into the entries below;
 1.2.1 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Fluid Monitor 1.4.0 - Use basins across the queue
+
+- All queued jobs share the configured basin pool. Free basins are assigned in
+  queue order, so later jobs can start while earlier jobs finish cooling.
+- Restored basin ownership is checked before any pour; jobs cannot claim the same
+  basin. Completion frees capacity for the next jobs in the same scheduler pass.
+- Automatic casting keeps a bounded wave of work ready, rotates eligible fluids,
+  and subtracts unpoured queued fluid from availability to avoid overbooking.
+- Queue status shows active/configured basins. Cancellation protects operations
+  across all jobs; error utilities target the job that actually failed.
+- Shared Fluid Service 1.3.1 accepts persistent, globally increasing basin-pour
+  receipt IDs so interleaved jobs retain restart/replay protection. Basin worker
+  helper is 1.1.0. Existing queued casts are retained.
+- Tests cover mixed-material queue utilization, free-capacity reuse, cooling
+  restart recovery, duplicate-ownership rejection and automatic work admission.
+
 ## Network Setup 1.4.0 - Select detected computers
 
 - Partner computer fields open a picker instead of requesting typed IDs.

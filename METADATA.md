@@ -220,3 +220,11 @@ getID/getLabel/isOn and the `crafting_center.discovery.v1` probe/hello protocol.
 Gear UI 1.2.1 and Fluid Monitor 1.3.1 answer role probes while running; Setup
 answers them even before the apps are configured. Fluid transfer authorization
 still uses the pinned partner ID and validated device ownership.
+
+## Queue-wide basin scheduling
+
+Fluid Monitor 1.4.0 / basin_casting.lua 1.1.0 schedule the entire `fluid_jobs.txt`
+queue through one basin ownership map. `nextPour` persists a global operation
+sequence, with `basin:<computer>:<sequence>:1` request IDs accepted by Fluid Service
+1.3.1 alongside legacy monitor IDs. Queue `failedJobId` identifies the job to
+revalidate; existing per-basin recovery checkpoints are unchanged.

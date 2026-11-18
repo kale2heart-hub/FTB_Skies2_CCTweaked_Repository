@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"basin_casting","title":"Managed Block Basins","launchable":false,"description":"Persistent one-block pours, cooling and verified block output collection."}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"basin_casting","title":"Managed Block Basins","launchable":false,"description":"Persistent one-block pours, cooling and verified block output collection."}
 return function(c,service)
  local T={}
  local function inspect(name)
@@ -32,7 +32,7 @@ return function(c,service)
   save();status("completed",{basin=basin},job)
  end
  function T.active(job) local n=0;for _ in pairs(job.units or {}) do n=n+1 end;return n end
- function T.tick(job,save)
+ function T.tick(job,save,options)
   assert(job.mode=="basin_blocks","Legacy buffer job; cancel it before using managed basins")
   assert(type(c.blockOutputChest)=="string" and c.blockOutputChest~="","Assign the block output chest in Network Setup")
   assert(#(c.basins or {})>0,"Assign casting basins in Network Setup")
@@ -62,7 +62,7 @@ return function(c,service)
       assert(unit.moved<job.amount,"Unexpected basin amount at "..basin)
       assert((unit.attempts or 0)<8,"Pour limit reached at "..basin.."; inspect recipe/cast")
       job.attempt=(job.attempt or 0)+1;unit.attempts=(unit.attempts or 0)+1
-      unit.phase="pouring";unit.request={id="monitor:"..os.getComputerID()..":"..job.id..":"..job.attempt,amount=job.amount-unit.moved};save()
+      unit.phase="pouring";unit.request={id=options and options.nextRequest and options.nextRequest() or "monitor:"..os.getComputerID()..":"..job.id..":"..job.attempt,amount=job.amount-unit.moved};save()
       status("pouring",unit,job)
       -- The durable service receipt measures this exact remainder, including after restart.
       local result=service.transfer(os.getComputerID(),unit.request.id,{target=basin,fluid=job.fluid,amount=unit.request.amount},true)
@@ -91,20 +91,60 @@ return function(c,service)
    end
   end
   if job.completed>=job.quantity then return true end
-  -- Fill each idle assigned basin with one whole block, allowing their cooling cycles to overlap.
-  local assigned=false;local firstProblem
+  if options and options.allocate==false then return false end
+  local assigned,problem=T.assign(job,save,options and options.owners)
+  assert(T.active(job)>0 or assigned>0,problem or "No free assigned basin")
+  return false
+ end
+ function T.assign(job,save,owners)
+  owners=owners or {};local assigned,firstProblem=0,nil
   for _,basin in ipairs(c.basins) do
-   if job.completed+T.active(job)>=job.quantity then break end
-   if not job.units[basin] then
+   if (job.completed or 0)+T.active(job)>=job.quantity then break end
+   if not owners[basin] and not job.units[basin] then
     local ok,items,_,amount=pcall(inspect,basin)
     if ok and not next(items) and amount==0 then
-     local unit={basin=basin,phase="partial",moved=0,attempts=0}
-     job.units[basin]=unit;save();assigned=true
+     job.units[basin]={basin=basin,phase="partial",moved=0,attempts=0}
+     owners[basin]=job;save();assigned=assigned+1
     elseif not firstProblem then firstProblem=ok and ("Basin occupied: "..basin.."; inspect before assigning") or tostring(items) end
    end
   end
-  assert(T.active(job)>0 or assigned,firstProblem or "No free assigned basin")
-  return false
+  return assigned,firstProblem
+ end
+ function T.waiting(job) return math.max(0,job.quantity-(job.completed or 0)-T.active(job)) end
+ function T.pendingFluid(job)
+  if job.mode~="basin_blocks" then return 0 end
+  local poured=0;for _,unit in pairs(job.units or {}) do poured=poured+(unit.moved or 0) end
+  return math.max(0,(job.quantity-(job.completed or 0))*job.amount-poured)
+ end
+ function T.stepQueue(jobs,save,nextRequest)
+  T.failedJobId=nil
+  local function owners()
+   local result={}
+   for _,job in ipairs(jobs) do
+    for basin in pairs(job.units or {}) do
+     if result[basin] then T.failedJobId=job.id;error("Basin assigned to two queued jobs: "..basin,0) end
+     result[basin]=job
+    end
+   end
+   return result
+  end
+  owners() -- Validate restored ownership before any physical operation.
+  local completed={}
+  for _,job in ipairs(jobs) do
+   local ok,done=pcall(T.tick,job,save,{allocate=false,nextRequest=nextRequest})
+   if not ok then T.failedJobId=job.id;error(done,0) end
+   if done then completed[job]=true end
+  end
+  for i=#jobs,1,-1 do if completed[jobs[i]] then table.remove(jobs,i);save() end end
+  local occupied=owners();local problem
+  for _,job in ipairs(jobs) do
+   local ok,result,reason=pcall(T.assign,job,save,occupied)
+   if not ok then T.failedJobId=job.id;error(result,0) end
+   problem=problem or reason
+  end
+  if #jobs>0 and not next(occupied) then
+   T.failedJobId=jobs[1].id;error(problem or "No free assigned basin",0)
+  end
  end
  function T.resolve(job,save,confirmEmptyDelivered)
   assert(job and job.mode=="basin_blocks","No managed basin job to inspect")

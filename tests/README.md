@@ -28,3 +28,8 @@ for every single/list device field, deselection, and disconnect/reconnect update
 Computer-picker checks run the real Setup key/event loop through discovery,
 refresh, role responses, wrong-role rejection and save without numeric input.
 They also cover stale/mismatched replies, self exclusion and offline partner removal.
+
+Queue-wide scheduling tests verify mixed-material jobs fill the basin pool,
+finished jobs release capacity, cooling work survives restoration, duplicate
+ownership is rejected, and automatic batches are admitted ahead without growing
+an unbounded backlog.

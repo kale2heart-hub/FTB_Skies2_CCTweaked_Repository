@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.3.0","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
+-- @crafting-center {"version":"1.3.1","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
 return function(root,c)
  local T={busy=false,holds={},registrations={},last="Ready"}
  local path=fs.combine(root,"fluid_transfers.txt")
@@ -13,10 +13,12 @@ return function(root,c)
  local function sequence(sender,id,localRequest)
   local owner,major,minor
   if localRequest=="refill" then owner,major,minor=id:match("^refill:(%d+):(%d+):(%d+)$")
-  elseif localRequest then owner,major,minor=id:match("^monitor:(%d+):(%d+):(%d+)$")
+  elseif localRequest then
+   if id:sub(1,6)=="basin:" then owner,major,minor=id:match("^basin:(%d+):(%d+):(%d+)$")
+   else owner,major,minor=id:match("^monitor:(%d+):(%d+):(%d+)$") end
   else owner,major,minor=id:match("^(%d+):(%d+):(%d+)$") end
   assert(tonumber(owner)==sender and major and minor,"Invalid transfer request identity")
-  return tostring(sender)..(localRequest=="refill" and ":refill" or localRequest and ":monitor" or ":gear"),tonumber(major),tonumber(minor)
+  return tostring(sender)..(localRequest=="refill" and ":refill" or localRequest and (id:sub(1,6)=="basin:" and ":basin" or ":monitor") or ":gear"),tonumber(major),tonumber(minor)
  end
  local function save()
   local f=assert(fs.open(path..".pending","w"));f.write(textutils.serialize(state));f.close()

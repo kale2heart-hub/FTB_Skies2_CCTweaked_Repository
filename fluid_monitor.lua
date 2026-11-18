@@ -1,5 +1,5 @@
--- @crafting-center {"version":"1.3.1","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
-local VERSION="1.3.1"
+-- @crafting-center {"version":"1.4.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
+local VERSION="1.4.0"
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -60,7 +60,7 @@ local function enqueue(fluid,shape,quantity,automatic)
  Q.nextId=Q.nextId+1;saveQueue();os.queueEvent("fluid_queue_changed")
 end
 local function cancelJob(index)
- assert(not S.busy or index~=1,"Wait for the current basin operation")
+ assert(not S.busy,"Wait for the current basin operation")
  local job=Q.jobs[index];if not job then return end
  for basin,unit in pairs(job.units or {}) do
   if unit.phase=="partial" and (unit.moved or 0)==0 then job.units[basin]=nil end
@@ -71,7 +71,7 @@ local function cancelJob(index)
   S.message="Waiting blocks cancelled; active basins will finish and collect"
  else
   table.remove(Q.jobs,index)
-  if index==1 then Q.paused=false;Q.reason=nil end
+  if job.id==Q.failedJobId or not Q.failedJobId and index==1 then Q.paused=false;Q.reason=nil;Q.failedJobId=nil end
   S.message="Job cancelled"
  end
  saveQueue();os.queueEvent("fluid_queue_changed")
@@ -80,6 +80,7 @@ local function resolveBasins(mode)
  assert(not S.busy,"Wait for current basin operation")
  service.acknowledge()
  local job=Q.jobs[1]
+ for _,candidate in ipairs(Q.jobs) do if candidate.id==Q.failedJobId then job=candidate;break end end
  if job and job.mode=="basin_blocks" then basins.resolve(job,saveQueue,mode) end
  Q.paused=false;Q.reason=nil;saveQueue();os.queueEvent("fluid_queue_changed")
  navigate("utilities")
@@ -234,7 +235,7 @@ local function render()
    if S.message~="" then line(H,S.message,nil,colors.lightGray) end
    if S.screen~="main" then
     local top=d.h-7;text(ox+1,top,W,string.rep("-",W),nil,colors.gray)
-    text(ox+1,top+1,W,"Queue: "..#Q.jobs.." | "..(S.busy and "Managing basins" or Q.paused and "Error - Queue paused" or "Ready"),nil,Q.paused and colors.red or colors.lightGray,true)
+    text(ox+1,top+1,W,"Queue: "..#Q.jobs.." | Basins: "..(function() local n=0;for _,job in ipairs(Q.jobs) do n=n+basins.active(job) end;return n end)().."/"..#(c.basins or {}).." | "..(S.busy and "Managing basins" or Q.paused and "Error - Queue paused" or "Ready"),nil,Q.paused and colors.red or colors.lightGray,true)
     local cast=basins.progress
     local progress=service.progress
     if cast and (cast.phase~="completed" or os.clock()-cast.at<=4) then
@@ -267,11 +268,13 @@ end
 local function queueWorker()
  while true do
   if Q.paused or #Q.jobs==0 then os.pullEvent("fluid_queue_changed") else
-   local job=Q.jobs[1];S.busy=true;os.queueEvent("fluid_status")
-   local ok,err=pcall(function()
-    if basins.tick(job,saveQueue) then table.remove(Q.jobs,1);saveQueue() end
+   S.busy=true;os.queueEvent("fluid_status")
+   local ok,err=pcall(basins.stepQueue,Q.jobs,saveQueue,function()
+    Q.nextPour=(Q.nextPour or 0)+1
+    return "basin:"..os.getComputerID()..":"..Q.nextPour..":1"
    end)
-   if not ok then Q.paused=true;Q.reason=tostring(err);saveQueue() end
+   if not ok then Q.paused=true;Q.reason=tostring(err);Q.failedJobId=basins.failedJobId;saveQueue()
+   elseif Q.failedJobId then Q.failedJobId=nil;saveQueue() end
    S.busy=false;os.queueEvent("fluid_status");sleep(.2)
   end
  end
@@ -288,13 +291,28 @@ local function stockWorker()
   table.sort(S.stock,function(a,b) return N.label(a.name)<N.label(b.name) end)
   local ready,reason=service.readyForLocal()
   if not ready then service.last=reason end
-  if ready and not Q.paused and #Q.jobs==0 and not service.fault and #service.uncertain()==0 then
-   for _,fluid in ipairs(S.stock) do
-    local rule=blockRules[fluid.name]
-    local amount=rule and rule.amount
-    if amount and auto[fluid.name] and #(c.basins or {})>0 and c.blockOutputChest and service.blockAvailable(fluid.name,fluid.amount)>=amount*64 then
-     enqueue(fluid.name,"Block",64,true);break
+  if ready and not Q.paused and not service.fault and #service.uncertain()==0 and #(c.basins or {})>0 and c.blockOutputChest then
+   local waiting=0;local reserved={}
+   for _,job in ipairs(Q.jobs) do
+    if job.mode=="basin_blocks" then
+     waiting=waiting+basins.waiting(job)
+     reserved[job.fluid]=(reserved[job.fluid] or 0)+basins.pendingFluid(job)
     end
+   end
+   -- Keep one wave of unassigned work available, with bounded admission and fair material rotation.
+   for attempt=1,math.ceil(#c.basins/64)+1 do
+    if waiting>=#c.basins or #S.stock==0 then break end
+    local found=false
+    for offset=1,#S.stock do
+     local index=((S.autoCursor or 0)+offset-1)%#S.stock+1
+     local fluid=S.stock[index];local rule=blockRules[fluid.name]
+     if rule and auto[fluid.name] and service.blockAvailable(fluid.name,fluid.amount)-(reserved[fluid.name] or 0)>=rule.amount*64 then
+      enqueue(fluid.name,"Block",64,true)
+      reserved[fluid.name]=(reserved[fluid.name] or 0)+rule.amount*64
+      waiting=waiting+64;S.autoCursor=index;found=true;break
+     end
+    end
+    if not found then break end
    end
   end
   os.queueEvent("fluid_status")

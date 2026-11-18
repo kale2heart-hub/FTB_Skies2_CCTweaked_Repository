@@ -195,9 +195,59 @@ l.execute(r"""
  App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={},layout={monitors={'gear_monitor'},destinations={'gear_table'},inventories={}}}})
  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e)
  assert(#App.Q.jobs==1 and App.Q.jobs[1].automatic and App.Q.jobs[1].mode=='basin_blocks' and App.Q.jobs[1].remaining==64*810)
+ local tail=App.Q.jobs[1];tail.completed=62;tail.remaining=1620
+ tail.units={basin1={phase='cooling',moved=810},basin2={phase='cooling',moved=810}}
+ poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e)
+ assert(#App.Q.jobs==2 and App.Q.jobs[2].quantity==64)
+ poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e);assert(#App.Q.jobs==2)
+
 """)
 print('PASS managed basins: block-only UI, two overlapping cooling cycles, exact block output collection, blocked-output Resume without re-pour, restart during cooling, cancellation protection and automatic Gear-reserved batches')
 
+
+l.execute(r"""
+ -- A small first job must not monopolize the queue while other basins are free.
+ local prior=peripheral.call;local inventory={['productivemetalworks:molten_iron']=100000,['productivemetalworks:molten_gold']=100000}
+ local output={};local pool={}
+ for i=1,3 do pool['multi_basin'..i]={amount=0} end
+ peripheral.call=function(name,method,...)
+  if name=='multi_store' then
+   if method=='tanks' then local rows={};for fluid,amount in pairs(inventory) do rows[#rows+1]={name=fluid,amount=amount} end;return rows end
+   if method=='pushFluid' then local target,amount,fluid=...;assert(pool[target]);inventory[fluid]=inventory[fluid]-amount;pool[target]={amount=amount,name=fluid,ready=now+3};return amount end
+  end
+  local basin=pool[name]
+  if basin then
+   if basin.ready and now>=basin.ready then basin.amount=0;basin.ready=nil;basin.item={name=basin.name:find('gold',1,true) and 'minecraft:gold_block' or 'minecraft:iron_block',count=1} end
+   if method=='list' then return basin.item and {[1]=basin.item} or {} end
+   if method=='tanks' then return basin.amount>0 and {{name=basin.name,amount=basin.amount}} or {} end
+   if method=='pushItems' then local target=...;assert(target=='multi_output' and basin.item);output[basin.item.name]=(output[basin.item.name] or 0)+1;basin.item=nil;return 1 end
+  end
+  return prior(name,method,...)
+ end
+ local cfg={sources={'multi_store'},basins={'multi_basin1','multi_basin2','multi_basin3'},blockOutputChest='multi_output',clients={10}}
+ local svc=factory('multi_service',cfg);svc.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
+ local manager=assert(load(basin_castingSource))()(cfg,svc)
+ local function job(id,kind,qty) return {id=id,mode='basin_blocks',fluid='productivemetalworks:molten_'..kind,quantity=qty,completed=0,amount=810,remaining=qty*810,outputs={'minecraft:'..kind..'_block'},units={}} end
+ local jobs={job(1,'iron',1),job(2,'gold',4),job(3,'iron',2)};local sequence=0;local snapshot
+ local function save() snapshot=textutils.serialize({jobs=jobs,nextPour=sequence}) end
+ local function token() sequence=sequence+1;return 'basin:20:'..sequence..':1' end
+ manager.stepQueue(jobs,save,token)
+ assert(jobs[1].units.multi_basin1 and jobs[2].units.multi_basin2 and jobs[2].units.multi_basin3)
+ manager.stepQueue(jobs,save,token);assert(pool.multi_basin1.amount==810 and pool.multi_basin2.amount==810 and pool.multi_basin3.amount==810)
+ -- Restore while multiple jobs cool. No basin is assigned to two jobs and no fluid is re-poured.
+ local recovered=textutils.unserialize(snapshot);jobs=recovered.jobs;sequence=recovered.nextPour
+ local iron=inventory['productivemetalworks:molten_iron'];local gold=inventory['productivemetalworks:molten_gold']
+ manager.stepQueue(jobs,save,token);assert(inventory['productivemetalworks:molten_iron']==iron and inventory['productivemetalworks:molten_gold']==gold)
+ now=now+3.1;manager.stepQueue(jobs,save,token)
+ assert(#jobs==2 and jobs[1].id==2 and manager.active(jobs[1])==2 and manager.active(jobs[2])==1)
+ for i=1,6 do manager.stepQueue(jobs,save,token);now=now+3.1 end
+ assert(#jobs==0 and output['minecraft:iron_block']==3 and output['minecraft:gold_block']==4 and sequence==7)
+ -- Duplicate recovered ownership stops before a pour/extraction.
+ jobs={job(4,'iron',1),job(5,'gold',1)};jobs[1].units.multi_basin1={phase='partial',moved=0};jobs[2].units.multi_basin1={phase='partial',moved=0}
+ local ok,e=pcall(manager.stepQueue,jobs,save,token);assert(not ok and tostring(e):find('two queued jobs',1,true))
+ peripheral.call=prior
+""")
+print('PASS queue-wide basin utilization: multiple fluids/jobs fill every basin, next jobs reuse free capacity, shared ownership survives restart, global pour IDs stay monotonic and duplicate ownership is rejected')
 l.execute(r"""
  local manager=assert(load(basin_castingSource))()(config,App.service)
  local function fresh(id)
