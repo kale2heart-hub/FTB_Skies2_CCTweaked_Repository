@@ -448,6 +448,30 @@ l.execute(r"""
  cfg.monitors={'fluid_display'};client.reserve({});assert(client.assignmentError==nil)
 """)
 print('PASS Rednet ownership exchange: no copied Gear list, monitor/storage/basin/chest and other-peer overlap rejection, unannounced pours denied, heartbeat re-registration after server restart, client conflict quarantine and recovery')
+
+setup=(R/'network_setup.lua').read_text()
+l.globals().monitorPicker=setup[:setup.rindex('while true do')]+"\nreturn {choose=choose,entries=entries,draw=draw,save=save}"
+l.execute(r"""
+ os.getComputerID=function() return 10 end
+ files['root/fluid_network.txt']=textutils.serialize({role='gear',modem='left',serverId=20,monitors={'monitor_2','monitor_10'}})
+ local connected={monitor_2=true,monitor_3=true}
+ peripheral.getNames=function() return {'monitor_2','monitor_3'} end
+ peripheral.getMethods=function() return {} end
+ peripheral.hasType=function(name,kind) return kind=='monitor' and connected[name]==true end
+ local fg;local sawRed=false
+ term.setTextColor=function(color) fg=color end
+ term.write=function(text) if text:find('[DISCONNECTED]',1,true) then assert(fg==colors.red);sawRed=true end end
+ local picker=assert(load(monitorPicker))();picker.choose('monitors','monitor',true)
+ local rows=picker.entries();assert(#rows==3 and rows[3].label=='[x] monitor_10 [DISCONNECTED]' and rows[3].fg==colors.red)
+ picker.draw();assert(sawRed)
+ rows[3].action();picker.choose('monitors','monitor',true);rows=picker.entries();assert(#rows==2)
+ -- A selected device disappearing while the picker is open changes its status immediately.
+ connected.monitor_2=false;rows=picker.entries();assert(rows[1].label:find('[DISCONNECTED]',1,true) and rows[1].fg==colors.red);picker.draw()
+ connected.monitor_2=true;rows=picker.entries();assert(not rows[1].label:find('[DISCONNECTED]',1,true) and rows[1].fg==nil)
+ rows[2].action();picker.save()
+ local saved=Network.load('root');assert(#saved.monitors==2 and saved.monitors[1]=='monitor_2' and saved.monitors[2]=='monitor_3')
+""")
+print('PASS missing monitors: retained/red/deselectable, natural order, refreshed choices and live disconnect/reconnect styling')
 for p in R.glob('*.lua'):
  ok,err=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,err)
 print('PASS all scripts compile in Lua 5.2')

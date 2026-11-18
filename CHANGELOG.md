@@ -5,6 +5,13 @@ internal development labels have been consolidated into the entries below;
 1.2.0 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Network Setup 1.3.1 - Disconnected monitor selections
+
+- Assigned monitors remain in the picker when disconnected and are shown in red
+  with a DISCONNECTED label, including when the highlighted row is selected.
+- Enter toggles missing assignments off; refresh keeps any remaining missing
+  assignments visible. Reconnected devices return to normal styling.
+
 ## Gear UI 1.2.0 / Fluid Monitor 1.3.0 - Independent computer setup
 
 Date: 2026-11-17

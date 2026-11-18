@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.3.0","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
+-- @crafting-center {"version":"1.3.1","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -29,6 +29,10 @@ local function deviceLess(a,b)
  if an and bn and tonumber(an)~=tonumber(bn) then return tonumber(an)<tonumber(bn) end
  return a<b
 end
+local function monitorConnected(name)
+ local ok,connected=pcall(peripheral.hasType,name,"monitor")
+ return ok and connected==true
+end
 local function choose(key,kind,multi)
  choices={};field=key;multiple=multi
  for _,name in ipairs(peripheral.getNames()) do
@@ -49,6 +53,9 @@ local function choose(key,kind,multi)
    valid=casting and ((not has(other,name) and not has(c.sources,name) and not has(c.gearSources,name)) or has(c[key],name))
   elseif key=="blockOutputChest" then valid=m.list and m.size and m.pushItems and not m.tanks end
   if valid then choices[#choices+1]=name end
+ end
+ if key=="monitors" then
+  for _,name in ipairs(c.monitors) do if not has(choices,name) then choices[#choices+1]=name end end
  end
  table.sort(choices,deviceLess);view="choose";selected=1;offset=0;message="Enter selects/toggles | B returns"
 end
@@ -113,7 +120,9 @@ local function entries()
   for _,name in ipairs(choices) do
    local current=value(field);local active=multiple and has(current or {},name) or current==name
    local conflict=(field=="sources" and has(c.gearSources,name)) or (field=="gearSources" and has(c.sources,name))
-   rows[#rows+1]={label=(active and "[x] " or "[ ] ")..name..(conflict and " [CONFLICT]" or ""),action=function()
+   local disconnected=field=="monitors" and not monitorConnected(name)
+   rows[#rows+1]={label=(active and "[x] " or "[ ] ")..name..(disconnected and " [DISCONNECTED]" or conflict and " [CONFLICT]" or ""),fg=disconnected and colors.red or nil,action=function()
+    if disconnected and not has(c.monitors,name) then message="Reconnect this monitor before assigning it again";return end
     if multiple then
      if conflict and not has(c[field],name) then message="Device belongs to the other system; remove that assignment first";return end
      c[field]=c[field] or {};toggle(c[field],name)
@@ -161,7 +170,7 @@ local function draw()
  local function line(y,label,bg,fg) term.setCursorPos(1,y);term.setBackgroundColor(bg or colors.black);term.setTextColor(fg or colors.white);term.write((label..string.rep(" ",w)):sub(1,w)) end
  line(1,"FLUID NETWORK SETUP | Computer "..os.getComputerID(),colors.blue)
  line(2,view=="choose" and ("Assign "..field.." | Changes are a draft") or "Separate computers | Explicit device assignments",nil,colors.lightGray)
- for i=1,visible do local row=rows[offset+i];if row then line(i+3,(selected==offset+i and "> " or "  ")..row.label,selected==offset+i and colors.blue or colors.black) end end
+ for i=1,visible do local row=rows[offset+i];if row then line(i+3,(selected==offset+i and "> " or "  ")..row.label,selected==offset+i and colors.blue or colors.black,row.fg) end end
  local wrapped={};local row=""
  for word in message:gmatch("%S+") do
   if #row+#word+1>w and row~="" then wrapped[#wrapped+1]=row;row="" end

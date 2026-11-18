@@ -435,3 +435,7 @@ computer's settings and restart affected applications. Successful registration
 restores Gear rendering, including a full screen refresh. Update/restart both
 applications when first enabling this protocol; station bindings and queued work
 are retained. No remote settings are edited by the peer.
+
+Assigned monitors that disconnect remain in Network Setup's monitor picker,
+shown in red with `[DISCONNECTED]`. Press Enter to remove that assignment,
+then save; reconnecting restores the normal display status.
