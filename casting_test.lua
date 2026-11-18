@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.1","suite":"crafting-center","id":"casting_test","title":"Casting Test","description":"Commission the manual casting table.","dependencies":["gear_config.lua"],"actions":[{"id":"test_inspect","title":"Casting Test: Inspect","args":["inspect"],"description":"Read-only inspection of the manual test table."},{"id":"test_collect","title":"Casting Test: Collect","args":["collect"],"description":"Move one existing test ingot into the output chest.","locks":["casting-state"]},{"id":"test_iron","title":"Casting Test: Iron","args":["iron"],"description":"REAL test: cast one iron ingot using 90 mB on the manual table.","locks":["casting-state"]}],"category":"Tools"}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"casting_test","title":"Casting Test","description":"Commission the manual casting table.","dependencies":["fluid_network.lua","fluid_client.lua","gear_config.lua"],"actions":[{"id":"test_inspect","title":"Casting Test: Inspect","args":["inspect"],"description":"Read-only inspection of the manual test table."},{"id":"test_collect","title":"Casting Test: Collect","args":["collect"],"description":"Move one existing test ingot into the output chest.","locks":["casting-state"]},{"id":"test_iron","title":"Casting Test: Iron","args":["iron"],"description":"REAL test: cast one iron ingot using 90 mB on the manual table.","locks":["casting-state"]}],"category":"Tools"}
 -- One-shot commissioning test. Separate from the UI and request queue.
 -- casting_test          : inspect only
 -- casting_test collect  : move ONE existing iron/steel ingot to output
@@ -6,8 +6,15 @@
 local ROOT=fs.getDir(shell.getRunningProgram())
 local configPath=fs.combine(ROOT,"gear_config.lua")
 local C=fs.exists(configPath) and dofile(configPath) or {}
+local Network=dofile(fs.combine(ROOT,"fluid_network.lua"))
+local net=Network.load(ROOT)
+local client
+local function call(name,method,...) return peripheral.call(name,method,...) end
+if net.role=="gear" then client=dofile(fs.combine(ROOT,"fluid_client.lua"))(Network,net);call=client.call end
+if net.role=="fluid" then error("Use Gear computer for Casting Test; monitor casting uses its assigned buffers",0) end
 local TABLE=C.manualCastingTable or C.castingTable or "productivemetalworks:casting_1"
-local SOURCE=(C.fluidStores or {})[1] or "functionalstorage:storage_controller_0"
+local SOURCE=client and Network.source or (C.fluidStores or {})[1] or "functionalstorage:storage_controller_0"
+if client then client.checkAssignments({Manual={peripheral=TABLE}}) end
 local OUTPUT=C.outputChest~="" and C.outputChest or nil
 OUTPUT=OUTPUT or "sophisticatedstorage:chest_2"
 local IRON="productivemetalworks:molten_iron"
@@ -17,11 +24,12 @@ local STATE=fs.combine(ROOT,"casting_test_state.txt")
 local args={...}
 local mode=args[1] or "inspect"
 local function invoke(name,method,...)
-  local ok,result=pcall(peripheral.call,name,method,...)
+  local ok,result=pcall(call,name,method,...)
   if not ok then error(name.."."..method..": "..tostring(result),0) end
   return result
 end
 local function requireMethod(name,method)
+  if client and name==Network.source and (method=="tanks" or method=="pushFluid") then return end
   local methods=peripheral.getMethods(name) or {}
   for _,m in ipairs(methods) do if m==method then return end end
   error("Missing "..method.." on "..name,0)
@@ -117,7 +125,9 @@ local function main()
   -- Isolate the table from other fluid feeds/output extractors for this test.
   state={status="fluid_transfer_started",table=TABLE,source=SOURCE,outputChest=OUTPUT,fluid=IRON,requested=90}
   saveState(state) -- Write BEFORE the irreversible transfer; never auto-retry.
+  if client then client.reserve({[IRON]=90}) end
   local moved=invoke(SOURCE,"pushFluid",TABLE,90,IRON)
+  if client then client.reserve({}) end
   state.moved=moved; state.status="waiting_for_output"; saveState(state)
   print("Fluid moved: "..tostring(moved).." / 90 mB")
   if moved~=90 then

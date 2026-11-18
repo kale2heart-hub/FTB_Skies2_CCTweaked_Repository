@@ -161,3 +161,18 @@ existing queue formats remain valid. Preview planning uses cached stock only.
 - `gear_stats_data.lua` (1.0.0): non-launchable FTB Skies 2 1.25.3 material/trait snapshot.
 - `gear_preview.lua` (1.0.0): non-launchable pure review formatter; no storage access.
 - Gear UI 2.1.0 adds both modules as dependencies; updater 1.3.0 installs them.
+
+## Shared liquid network
+
+- Gear UI 1.1.0 depends on `fluid_network.lua` and `fluid_client.lua`; configured
+  Gear computers route tanks/pushFluid through the pinned fluid server.
+- `fluid_monitor.lua` 1.0.0 is an Applications entry and holds `fluid-service`.
+  It depends on `fluid_network.lua` and `fluid_service.lua`.
+- `network_setup.lua` 1.0.0 is a Console Scripts entry. It saves per-computer
+  assignments to `fluid_network.txt`; settings are not distributed by the updater.
+- `fluid_network.lua`, `fluid_client.lua`, `fluid_service.lua` are non-launchable
+  helpers, each 1.0.0. Protocol: `crafting_center.fluids.v1`, over a local wired modem.
+- `casting_test.lua` 1.1.0 uses the service on a configured Gear computer.
+- Updater 1.5.0 distributes all five new files and preserves local network state.
+- Local state: `fluid_network.txt`, `fluid_jobs.txt`, `fluid_auto.txt`, and
+  `fluid_transfers.txt`, each potentially with a recoverable `.pending` save.

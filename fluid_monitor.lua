@@ -1,0 +1,264 @@
+-- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, casting buffers, automatic casting and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["fluid_network.lua","fluid_service.lua"]}
+local VERSION="1.0.0"
+local ROOT=fs.getDir(shell.getRunningProgram())
+local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
+local c=N.load(ROOT)
+assert(c.role=="fluid","Assign this computer to Fluid Monitor in Fluid Network Setup first")
+N.open(c)
+local service=dofile(fs.combine(ROOT,"fluid_service.lua"))(ROOT,c)
+local S={screen="welcome",page=1,quantity=1,shape="Block",message="",stock={},lastTouch=os.clock()}
+local displays,W,H={},math.huge,math.huge
+local palette={[colors.black]=0x101820,[colors.blue]=0x25394D,[colors.gray]=0x334155,[colors.lightGray]=0xAAB8C5,[colors.cyan]=0x176B80,[colors.green]=0x265F4B,[colors.red]=0x8B3545,[colors.white]=0xF0F5FA}
+local function loadState(name,default)
+ local path=fs.combine(ROOT,name)
+ if fs.exists(path..".pending") then path=path..".pending" end
+ if not fs.exists(path) then return default end
+ local f=assert(fs.open(path,"r"));local value=textutils.unserialize(f.readAll());f.close()
+ assert(type(value)=="table","Unreadable "..name.."; inspect before continuing")
+ return value
+end
+local function saveState(name,value)
+ local path=fs.combine(ROOT,name)
+ local f=assert(fs.open(path..".pending","w"));f.write(textutils.serialize(value));f.close()
+ local check=assert(fs.open(path..".pending","r"));local decoded=textutils.unserialize(check.readAll());check.close();assert(type(decoded)=="table","State save failed")
+ if fs.exists(path) then fs.delete(path) end
+ fs.move(path..".pending",path)
+end
+local Q=loadState("fluid_jobs.txt",{jobs={},nextId=1,paused=false})
+assert(type(Q.jobs)=="table" and type(Q.nextId)=="number","Invalid fluid_jobs.txt")
+local auto=loadState("fluid_auto.txt",{})
+local function saveQueue() saveState("fluid_jobs.txt",Q) end
+local function connect()
+ displays={};W,H=math.huge,math.huge
+ for _,name in ipairs(c.monitors) do
+  assert(peripheral.hasType(name,"monitor"),"Assigned fluid monitor disconnected: "..name)
+  local m=peripheral.wrap(name);m.setTextScale(.5)
+  for color,hex in pairs(palette) do m.setPaletteColor(color,hex) end
+  local w,h=m.getSize();displays[#displays+1]={name=name,mon=m,w=w,h=h,cache={}}
+  W=math.min(W,w);H=math.min(H,h-9)
+ end
+ assert(#displays>0 and W>=30 and H>=30,"Assign fluid monitors with at least 30x39 text cells")
+end
+local function center(s,w) s=tostring(s):sub(1,w);local left=math.floor((w-#s)/2);return string.rep(" ",left)..s..string.rep(" ",w-#s-left) end
+local function format(n) return n>=1000 and string.format("%.2f B",n/1000) or tostring(n).." mB" end
+local function selectedStock() for _,row in ipairs(S.stock) do if row.name==S.fluid then return row.amount end end;return 0 end
+local function volume() return S.fluid and N.volume(S.shape,S.fluid) end
+local function navigate(screen) S.screen=screen;S.page=1;S.message="" end
+local function enqueue(fluid,shape,quantity,automatic)
+ local amount=N.volume(shape,fluid);assert(amount,"This fluid has no verified ingot volume")
+ local target=(c.outputs or {})[shape];assert(target and target~="","Assign a separate "..shape.." casting buffer in Network Setup")
+ Q.jobs[#Q.jobs+1]={id=Q.nextId,fluid=fluid,shape=shape,quantity=quantity,remaining=amount*quantity,total=amount*quantity,target=target,automatic=automatic or false}
+ Q.nextId=Q.nextId+1;saveQueue();os.queueEvent("fluid_queue_changed")
+end
+local function render()
+ for _,d in ipairs(displays) do
+  local breath=(1-math.cos(os.clock()*math.pi/3))/2
+  local shade=S.screen=="welcome" and math.floor(9+7*breath) or 16
+  local hex=S.screen=="welcome" and (shade*65536+math.floor(14+10*breath)*256+math.floor(18+14*breath)) or palette[colors.black]
+  if d.background~=hex then d.mon.setPaletteColor(colors.black,hex);d.background=hex end
+  local rows={};local buttons={};local ox=math.floor((d.w-W)/2);local oy=math.max(0,d.h-9-H)
+  for y=1,d.h do rows[y]={text=string.rep(" ",d.w),fg=string.rep(colors.toBlit(colors.white),d.w),bg=string.rep(colors.toBlit(colors.black),d.w)} end
+  local function text(x,y,width,label,bg,fg,align)
+   if y<1 or y>d.h then return end
+   width=math.max(0,math.min(width,d.w-x+1));if width==0 then return end
+   label=align and center(label,width) or (tostring(label)..string.rep(" ",width)):sub(1,width)
+   local r=rows[y]
+   r.text=r.text:sub(1,x-1)..label..r.text:sub(x+width)
+   r.fg=r.fg:sub(1,x-1)..string.rep(colors.toBlit(fg or colors.white),width)..r.fg:sub(x+width)
+   r.bg=r.bg:sub(1,x-1)..string.rep(colors.toBlit(bg or colors.black),width)..r.bg:sub(x+width)
+  end
+  local function line(y,label,bg,fg) text(ox+1,oy+y,W,label,bg,fg,true) end
+  local function button(x,y,width,label,action,bg)
+   if not action and (label=="Previous" or label=="Next") then return end
+   text(ox+x,oy+y,width,label,bg or (action and colors.blue or colors.gray),action and colors.white or colors.lightGray,true)
+   text(ox+x,oy+y+1,width,"",bg or (action and colors.blue or colors.gray))
+   if action then buttons[#buttons+1]={x=ox+x,y=oy+y,w=width,h=2,action=action} end
+  end
+  local half=math.floor((W-2)/2);local right=W-half+1
+  if S.screen=="welcome" then
+   text(1,math.floor(d.h/2)-1,d.w,"Welcome to the Fluid Center",colors.black,colors.white,true)
+   text(1,math.floor(d.h/2)+1,d.w,"Right click to begin",colors.black,colors.lightGray,true)
+   buttons[1]={x=1,y=1,w=d.w,h=d.h,action=function() navigate("main") end}
+  else
+   local problem=Q.paused or service.fault or S.stockError
+   local frame=problem and colors.red or colors.blue
+   line(1,"LIQUID RESOURCE MONITOR",frame)
+   line(2,"Computer "..os.getComputerID().." | "..S.screen,nil,colors.lightGray)
+   text(ox+1,d.h,W,"",frame)
+   text(ox+W-#VERSION-1,d.h,#VERSION+1,"v"..VERSION,frame,colors.gray)
+   if S.screen~="main" then
+    button(1,3,half,"<< Back",function() navigate(S.screen=="review" and "material" or S.screen=="material" and "resources" or "main") end,colors.gray)
+    button(right,3,half,"Home",function() navigate("main") end)
+   end
+   if S.screen=="main" then
+    local width=math.floor(W*2/3);local x=math.floor((W-width)/2)+1
+    line(5,"Select Option")
+    button(x,7,width,"Resources",function() navigate("resources") end,colors.cyan)
+    button(x,10,width,"Queue ("..#Q.jobs..")",function() navigate("queue") end)
+    button(x,13,width,"Automatic Casting",function() navigate("automatic") end)
+    button(x,H-2,width,"Utilities",function() navigate("utilities") end,colors.gray)
+   elseif S.screen=="resources" or S.screen=="automatic" then
+    local size=math.max(1,math.floor((H-14)/3));local pages=math.max(1,math.ceil(#S.stock/size));S.page=math.max(1,math.min(S.page,pages))
+    line(6,S.screen=="automatic" and "Toggle automatic 64-block batches" or "Select a fluid",colors.blue)
+    if #S.stock==0 then line(9,S.stockError and "Storage unavailable" or "No fluids in assigned storage",nil,colors.lightGray) end
+    for i=1,size do
+     local fluid=S.stock[(S.page-1)*size+i]
+     if fluid then
+      local label=N.label(fluid.name).." ("..format(fluid.amount)..")"
+      if S.screen=="automatic" then label=(auto[fluid.name] and "[ON] " or "[OFF] ")..label end
+      button(1,8+(i-1)*3,W,label,function()
+       if S.screen=="automatic" then auto[fluid.name]=not auto[fluid.name];saveState("fluid_auto.txt",auto)
+       else S.fluid=fluid.name;S.quantity=1;navigate("material") end
+      end,auto[fluid.name] and S.screen=="automatic" and colors.green or colors.blue)
+     end
+    end
+    if pages>1 then line(H-6,"Page: "..S.page.." / "..pages,nil,colors.lightGray) end
+    button(1,H-4,half,"Previous",S.page>1 and function() S.page=S.page-1 end or nil)
+    button(right,H-4,half,"Next",S.page<pages and function() S.page=S.page+1 end or nil)
+   elseif S.screen=="material" or S.screen=="review" then
+    line(6,N.label(S.fluid),colors.blue)
+    line(9,"Available: "..format(selectedStock()),nil,colors.lightGray)
+    line(11,"Gear reserved: "..format(service.reserved(S.fluid)),nil,colors.lightGray)
+    button(1,13,half,"Ingot",function() S.shape="Ingot" end,S.shape=="Ingot" and colors.cyan or colors.blue)
+    button(right,13,half,"Block",function() S.shape="Block" end,S.shape=="Block" and colors.cyan or colors.blue)
+    local amount=volume()
+    line(16,amount and ("Need "..format(amount*S.quantity).." for "..S.quantity.." "..S.shape) or "No verified casting recipe for this fluid",nil,colors.lightGray)
+    if S.screen=="review" then line(18,"Send fluid to the assigned casting buffer",nil,colors.lightGray) end
+    local labels={"Min","-16","-1","Qty:"..S.quantity,"+1","+16","Max"}
+    local delta={false,-16,-1,false,1,16,false};local unit=math.floor(W/7)
+    for i,label in ipairs(labels) do
+     local index=i
+     button(1+(i-1)*unit,H-7,i==7 and W-6*unit or unit,label,i~=4 and function()
+      S.quantity=index==1 and 1 or index==7 and 64 or math.max(1,math.min(64,S.quantity+delta[index]))
+     end or nil,i==4 and colors.cyan or colors.blue)
+    end
+    button(1,H-3,half,"Reset",function() S.quantity=1 end,colors.cyan)
+    button(right,H-3,half,S.screen=="review" and "Add to Queue" or "Review",amount and function()
+     if S.screen=="review" then enqueue(S.fluid,S.shape,S.quantity,false);S.quantity=1;S.message="Added to casting-buffer queue"
+     else navigate("review") end
+    end or nil,colors.cyan)
+   elseif S.screen=="queue" then
+    line(6,"Items in Queue: "..#Q.jobs,colors.blue)
+    local size=math.max(1,math.floor((H-17)/3));local pages=math.max(1,math.ceil(#Q.jobs/size));S.page=math.max(1,math.min(S.page,pages))
+    for i=1,size do
+     local index=(S.page-1)*size+i;local job=Q.jobs[index]
+     if job then button(1,8+(i-1)*3,W,"Cancel "..N.label(job.fluid).." "..job.shape.." ("..format(job.remaining)..")",function()
+      assert(not S.busy or index~=1,"Wait for the transfer to finish")
+      table.remove(Q.jobs,index);Q.paused=false;Q.reason=nil;saveQueue();S.message="Job cancelled; transferred fluid stays at its destination"
+     end,colors.gray) end
+    end
+    if #Q.jobs==0 then line(10,"Queue idle",nil,colors.lightGray) end
+    button(1,H-8,half,"Previous",S.page>1 and function() S.page=S.page-1 end or nil)
+    button(right,H-8,half,"Next",S.page<pages and function() S.page=S.page+1 end or nil)
+    button(1,H-4,W,"Resume Queue",Q.paused and function() Q.paused=false;Q.reason=nil;saveQueue();os.queueEvent("fluid_queue_changed") end or nil,colors.cyan)
+    line(H-1,Q.reason or service.last,nil,Q.paused and colors.red or colors.lightGray)
+   elseif S.screen=="utilities" then
+    line(6,"Fluid Service / Error Report",colors.blue)
+    local problems=service.uncertain();line(9,"Uncertain transfers: "..#problems,nil,colors.lightGray)
+    if problems[1] then
+     line(11,"Inspect: "..problems[1].target,nil,colors.red)
+     line(13,N.label(problems[1].fluid).." requested "..format(problems[1].amount),nil,colors.lightGray)
+    end
+    line(15,"Gear holds are protected; stale heartbeats stop local casting",nil,colors.lightGray)
+    button(1,H-7,W,"Inspect Complete / Acknowledge",(#problems>0 or service.fault) and function() navigate("acknowledge") end or nil,colors.gray)
+    button(1,H-3,W,"Refresh Storage",function() os.queueEvent("fluid_refresh") end)
+   elseif S.screen=="acknowledge" then
+    line(7,"Inspect affected buffers/tables before acknowledging",nil,colors.red)
+    line(10,"Cancel any affected monitor job and inspect Gear errors.",nil,colors.lightGray)
+    line(13,"This clears the service lock; no transfer is repeated.",nil,colors.lightGray)
+    button(1,H-3,W,"Confirm inspected / clear service lock",function() service.acknowledge();navigate("utilities") end,colors.cyan)
+   end
+   if S.message~="" then line(H,S.message,nil,colors.lightGray) end
+   if S.screen~="main" and S.screen~="queue" then
+    local top=d.h-7;text(ox+1,top,W,string.rep("-",W),nil,colors.gray)
+    text(ox+1,top+1,W,"Queue: "..#Q.jobs.." | "..(S.busy and "Sending fluid" or Q.paused and "Error - Queue paused" or "Ready"),nil,Q.paused and colors.red or colors.lightGray,true)
+    local progress=service.progress
+    if progress and os.clock()-progress.at<=4 then
+     local fill=math.floor(W*math.min(1,progress.moved/progress.requested))
+     text(ox+1,top+3,fill,"",progress.completed and colors.green or colors.cyan)
+     text(ox+1+fill,top+3,W-fill,"",colors.gray)
+     text(ox+1,top+4,W,(progress.completed and "Completed: " or "Sending: ")..format(progress.moved).." / "..format(progress.requested),nil,colors.lightGray,true)
+    else text(ox+1,top+3,W,service.last,nil,colors.lightGray,true) end
+   end
+  end
+  d.buttons=buttons
+  for y,row in ipairs(rows) do
+   local key=row.text..row.fg..row.bg
+   if d.cache[y]~=key then d.mon.setCursorPos(1,y);d.mon.blit(row.text,row.fg,row.bg);d.cache[y]=key end
+  end
+ end
+end
+local function networkLoop()
+ while true do
+  local sender,message=rednet.receive(N.protocol)
+  if type(message)=="table" and message.version==1 and type(message.id)=="string" and #message.id<=160 then
+   local ok,result=pcall(service.handle,sender,message)
+   rednet.send(sender,{version=1,id=message.id,ok=ok,result=ok and result or nil,error=not ok and tostring(result) or nil},N.protocol)
+   os.queueEvent("fluid_status")
+  end
+ end
+end
+local function queueWorker()
+ while true do
+  if Q.paused or #Q.jobs==0 then os.pullEvent("fluid_queue_changed") else
+   local job=Q.jobs[1];S.busy=true;os.queueEvent("fluid_status")
+   local ok,err=pcall(function()
+    if not job.request then
+     job.attempt=(job.attempt or 0)+1
+     job.request={id="monitor:"..os.getComputerID()..":"..job.id..":"..job.attempt,amount=job.remaining};saveQueue()
+    end
+    local result=service.transfer(os.getComputerID(),job.request.id,{target=job.target,fluid=job.fluid,amount=job.request.amount},true)
+    job.remaining=job.remaining-result.moved;job.request=nil
+    if job.remaining==0 then table.remove(Q.jobs,1)
+    else Q.paused=true;Q.reason=result.error or "Buffer rejected fluid; check destination capacity" end
+    saveQueue()
+   end)
+   if not ok then Q.paused=true;Q.reason=tostring(err);saveQueue() end
+   S.busy=false;os.queueEvent("fluid_status");sleep(.2)
+  end
+ end
+end
+local function stockWorker()
+ while true do
+  local ok,stock=pcall(service.stock)
+  S.stock=ok and stock or {};S.stockError=not ok and tostring(stock) or nil
+  table.sort(S.stock,function(a,b) return N.label(a.name)<N.label(b.name) end)
+  local ready,reason=service.readyForLocal()
+  if not ready then service.last=reason end
+  if ready and not Q.paused and #Q.jobs==0 and not service.fault and #service.uncertain()==0 then
+   for _,fluid in ipairs(S.stock) do
+    local amount=N.volume("Block",fluid.name)
+    if amount and auto[fluid.name] and (c.outputs or {}).Block and fluid.amount-service.reserved(fluid.name)-(c.keepMb or 0)>=amount*64 then
+     enqueue(fluid.name,"Block",64,true);break
+    end
+   end
+  end
+  os.queueEvent("fluid_status")
+  local timer=os.startTimer(3)
+  while true do local event,id=os.pullEvent();if event=="fluid_refresh" or event=="timer" and id==timer then break end end
+ end
+end
+local function uiLoop()
+ local timer=os.startTimer(.5)
+ while true do
+  local event,name,x,y=os.pullEvent()
+  if event=="monitor_touch" then
+   for _,d in ipairs(displays) do if d.name==name then
+    S.lastTouch=os.clock()
+    for _,button in ipairs(d.buttons or {}) do if x>=button.x and x<button.x+button.w and y>=button.y and y<button.y+button.h then
+     local ok,err=pcall(button.action);if not ok then S.message=tostring(err) end;break
+    end end
+   end end
+   render()
+  elseif event=="fluid_status" then render()
+  elseif event=="timer" and name==timer then
+   local pending=#Q.jobs>0 or S.busy
+   if not pending and os.clock()-S.lastTouch>=30 then S.screen="welcome" elseif pending and os.clock()-S.lastTouch>=60 then S.screen="queue" end
+   render();timer=os.startTimer(.5)
+  elseif event=="monitor_resize" or event=="peripheral" or event=="peripheral_detach" then connect();render() end
+ end
+end
+connect();render()
+print("Liquid Resource Monitor v"..VERSION.." | Computer "..os.getComputerID())
+print("Only assigned monitors, fluid sources and output buffers are controlled.")
+parallel.waitForAny(uiLoop,networkLoop,queueWorker,stockWorker)

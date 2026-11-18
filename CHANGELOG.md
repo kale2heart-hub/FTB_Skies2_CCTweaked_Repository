@@ -1,9 +1,39 @@
 # Changelog
 
-Gear UI history is grouped under the current 1.0.x version scheme. Earlier
+Gear UI core history is grouped under the 1.0.x version scheme. Earlier
 internal development labels have been consolidated into the entries below;
-1.0.4 is the current Gear UI version. Supporting scripts retain independent
+1.1.0 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
+
+## Gear UI 1.1.0 / Liquid Resource Monitor 1.0.0 - Shared wired fluid network
+
+Date: 2026-11-17
+
+- Replaced the original fluid monitor's discovery-order displays and fixed-side
+  transfer controls with saved, explicit device assignments on separate computers.
+- Added Liquid Resource Monitor with Gear-style welcome/home navigation, cached
+  mirrored monitors, alphabetic fluid stock, material quantities/review/queue,
+  cancellation, error utilities, muted version footer and measured progress.
+- Retained automatic casting as 64-block batches to separate ingot/block buffers.
+  Gear casting tables remain exclusive to Gear UI; monitor progress confirms
+  buffer delivery rather than completion of downstream casting machinery.
+- Gear UI reads shared stock and requests exact fluid volumes over a pinned-server
+  wired Rednet protocol. Recovery and manual Casting Test use the same adapter.
+- Queued Gear demand is published to the fluid server. Local monitor casting
+  preserves that demand and an optional extra reserve; stale Gear heartbeats
+  pause local casting rather than releasing reservations.
+- Transfers use durable bounded receipts and sequence watermarks: duplicate
+  requests do not re-pour, and expired receipts require inspection. Partial
+  deliveries retain measured amounts; uncertain results lock further transfers.
+- Added console-style Fluid Network Setup for roles, wired modems, per-computer
+  monitor assignments, computer IDs, fluid sources, allowed Gear destinations,
+  separate buffer tanks, and optional reserves. Settings survive updates.
+- Gear UI rejects overlapping server monitors/buffers and disables monitor
+  discovery in shared-network mode. Existing standalone installations still work.
+- Updater 1.5.0 includes the five new network/monitor files; Casting Test is 1.1.0.
+- Local service/client, monitor rendering, partial/restarted delivery, reservation,
+  replay/timeout, and complete remote Gear queue tests pass under Lua 5.2.
+  In-game commissioning of the combined network is still required.
 
 ## Gear UI 1.0.4 - Stat paging interval
 

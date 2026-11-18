@@ -297,3 +297,68 @@ Gear UI 1.0.4 cycles through Stats & Traits pages every five seconds. Touching
 any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
+
+## Shared fluid network (Gear UI 1.1.0 / Liquid Resource Monitor 1.0.0)
+
+The two computers share a wired modem network. The Liquid Resource Monitor owns
+fluid storage and all transfers out of it; Gear UI requests exact fluid IDs and
+mB amounts from that computer. Gear tables remain under Gear UI control, while
+monitor casting sends measured fluid batches into separate ingot/block buffers
+feeding the monitor's existing casting machinery. The new monitor replaces the
+original script; it does not automate output collection from those separate
+casting machines. Its completion indicator means fluid delivered to the buffer.
+
+### One-time setup
+
+1. Stop the original liquid monitor script and Gear UI before joining the cables.
+   Install the updated suite on both computers, then join their wired networks.
+2. Open **Fluid Network Setup** in Control Center's Console Scripts on each
+   computer. Its header shows that computer's ID. Select the local wired modem.
+3. On the fluid computer choose role **fluid**, assign only its monitors and fluid
+   storage controller(s), and set the Gear computer ID. Select the allowed Gear
+   casting destinations: the assigned basin and casting tables used by Gear UI.
+   With the current layout that is casting_0 and casting_2 through casting_41.
+   Include casting_1 only if the manual Casting Test should be allowed too.
+4. Assign the fluid monitor's **separate ingot and block buffer tanks**. These
+   must not be Gear tables or fluid sources. No destinations are auto-selected.
+   Select a storage controller once; do not also select its attached drawers or
+   another alias for the same inventory, which would count the fluid twice.
+5. On the Gear computer choose role **gear**, assign its in/out/dev monitors
+   (up to three), and set the Fluid Monitor computer ID. Save on both computers.
+6. Start **Liquid Resource Monitor** from Applications first, then Gear UI.
+   Gear checks for overlapping monitor/buffer assignments before drawing.
+
+Settings are saved locally in `fluid_network.txt`; updates do not replace it.
+Before setup, Gear UI retains its existing standalone behavior. After setup,
+Gear monitor discovery is disabled, and all Gear casting/recovery fluid requests
+use the shared service. Configuring the fluid role prevents launching Gear UI on
+that computer. Changes to station names require updating the server's destination
+allowlist in Network Setup as well as the existing Gear station bindings.
+
+### Fluid Monitor workflow
+
+- Welcome -> Main Menu -> Resources -> fluid -> Ingot/Block and quantity -> Review
+  -> Add to Queue. Stock is listed alphabetically, with available amounts.
+- Queue lets the player cancel jobs and resume known partial buffer deliveries;
+  only the remaining mB are sent. A currently running transfer cannot be cancelled.
+- Automatic Casting toggles each exact fluid ID. It queues 64-block batches using
+  the same material-specific volumes as the Gear casting rules, preserving Gear's
+  queued demand and the optional extra reserve configured in Network Setup.
+- Automatic and manual monitor casting wait for a fresh Gear queue heartbeat.
+  If Gear UI stops or disconnects for over 15 seconds, local casting pauses rather
+  than consuming fluid promised to Gear jobs. Start Gear UI to resume heartbeats;
+  paused manual jobs may then be resumed on the Queue screen.
+- Utilities reports uncertain transfers. Inspect the named destination and affected
+  jobs before confirming acknowledgment. This clears the service lock, without
+  repeating a transfer. Cancel an affected monitor job if its outcome is uncertain.
+
+Transfers are serialized by the service. Validated request receipts survive
+restarts; duplicate requests return the prior measured result. Expired receipts
+are rejected instead of replayed. A client timeout never automatically resends
+fluid, and uncertain physical transfers block further pours for inspection.
+Keep the original uncoordinated monitor script stopped: it bypasses this service.
+
+The monitor uses Gear-style colors, welcome/home navigation, two-row buttons,
+quantity/review/queue controls, a muted version footer and cached monitor frames.
+The shared network adapter also applies to Gear's bounded recovery and manual
+Casting Test. Existing cast installation/availability files are not reset.

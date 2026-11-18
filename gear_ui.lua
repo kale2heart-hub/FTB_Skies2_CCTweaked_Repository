@@ -1,9 +1,22 @@
--- @crafting-center {"version":"1.0.4","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["fluid_network.lua","fluid_client.lua","gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Live casting and chest-delivery queues, including Gear part kits for manual assembly.
-local VERSION="1.0.4"
+local VERSION="1.1.0"
 local ROOT = fs.getDir(shell.getRunningProgram())
 local C = dofile(fs.combine(ROOT, "gear_config.lua"))
+local Network=dofile(fs.combine(ROOT,"fluid_network.lua"))
+local networkSettings=Network.load(ROOT)
+local networkClient
+local function networkCall(name,method,...) return peripheral.call(name,method,...) end
+if networkSettings.role=="gear" then
+  networkClient=dofile(fs.combine(ROOT,"fluid_client.lua"))(Network,networkSettings)
+  networkCall=networkClient.call
+  C.fluidStores={Network.source}
+  C.monitorAutoDiscover=false
+  C.monitors={inDisplay=networkSettings.monitors[1] or "",outDisplay=networkSettings.monitors[2] or "",devDisplay=networkSettings.monitors[3] or ""}
+elseif networkSettings.role=="fluid" then
+  error("This computer is assigned to Liquid Resource Monitor; launch that application instead",0)
+end
 local Cast=dofile(fs.combine(ROOT,"cast_tracking.lua"))(ROOT,C)
 local recoverCasting=dofile(fs.combine(ROOT,"casting_recovery.lua"))
 local gearCastingData=dofile(fs.combine(ROOT,"gear_casting_data.lua"))
@@ -47,6 +60,7 @@ if fs.exists(bindingPath) then
   assert(type(saved)=="table","Unreadable gear_stations.txt")
   for shape,station in pairs(saved) do castStations[shape]=station end
 end
+if networkClient then networkClient.checkAssignments(castStations) end
 local function liveCastingEnabled()
   return C.liveCasting==true or (C.liveCasting==nil and C.liveIronCasting==true)
 end
@@ -170,8 +184,19 @@ local function reservedChest(name,nbt,label)
   end
   return total
 end
+local function publishFluidDemand()
+  if not networkClient then return end
+  local demand={}
+  for _,batch in ipairs(Q.batches) do if batch.fluid then demand[batch.fluid]=reservedFluid(batch.fluid) end end
+  networkClient.reserve(demand)
+end
+if networkClient then networkClient.beforePour=publishFluidDemand end
 local function saveQueue()
   local f=assert(fs.open(QUEUE_FILE,"w")); f.write(textutils.serialize(Q)); f.close()
+  if networkClient then
+    local ok,err=pcall(publishFluidDemand)
+    S.networkError=not ok and tostring(err) or nil
+  end
 end
 local function waitingItems()
   local n=0
@@ -236,6 +261,9 @@ local function readCastReport(force)
 end
 local function castStockWorker()
  while true do
+  if networkClient then
+    local ok,err=pcall(publishFluidDemand);S.networkError=not ok and tostring(err) or nil
+  end
   readCastReport(true)
   if chestCatalog then chestCatalog.scan() end
   os.queueEvent("gear_cast_stock_ready")
@@ -319,7 +347,7 @@ local function ruleAvailable(r)
 end
 local function readPeripheral(name, method)
   if not name or name=="" then return nil end
-  local ok,result=pcall(peripheral.call,name,method)
+  local ok,result=pcall(networkCall,name,method)
   if not ok then errors[#errors+1]=name..": "..tostring(result); return nil end
   return result
 end
@@ -579,7 +607,7 @@ local function connect()
   local names={}
   -- In demo mode, unassigned monitors use a sorted discovery list.
   local auto={}
-  if C.demoMode then
+  if C.demoMode and C.monitorAutoDiscover~=false then
     for _,name in ipairs(peripheral.getNames()) do
       if peripheral.hasType(name,"monitor") then auto[#auto+1]=name end
     end
@@ -592,7 +620,7 @@ local function connect()
   names={}
   for _,alias in ipairs({"inDisplay","outDisplay","devDisplay"}) do
     local name=C.monitors[alias]
-    if C.demoMode and (not name or name=="") then
+    if C.demoMode and C.monitorAutoDiscover~=false and (not name or name=="") then
       for _,candidate in ipairs(auto) do
         if not names[candidate] and not reserved[candidate] then name=candidate; break end
       end
@@ -971,7 +999,7 @@ local function writeJob(j)
   local f=assert(fs.open(JOB_STATE,"w")); f.write(textutils.serialize(j)); f.close()
 end
 local function castCall(name,method,...)
-  local ok,value=pcall(peripheral.call,name,method,...)
+  local ok,value=pcall(networkCall,name,method,...)
   if not ok then error(tostring(name).."."..method..": "..tostring(value),0) end
   return value
 end

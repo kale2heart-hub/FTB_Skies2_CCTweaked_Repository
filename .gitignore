@@ -17,3 +17,13 @@ cast_availability.txt
 station_delivery_report.txt
 
 cast_installations.txt
+
+# Per-computer shared fluid network settings and journals
+fluid_network.txt
+fluid_network.txt.pending
+fluid_transfers.txt
+fluid_transfers.txt.pending
+fluid_jobs.txt
+fluid_jobs.txt.pending
+fluid_auto.txt
+fluid_auto.txt.pending
