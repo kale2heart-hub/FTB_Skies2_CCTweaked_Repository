@@ -5,6 +5,12 @@ internal development labels have been consolidated into the entries below;
 1.1.0 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Network Setup 1.1.1 / Diagnostics 1.0.2 - Numeric device ordering
+
+- Casting device lists now sort numeric suffixes naturally: casting_0, casting_1,
+  casting_2, ... casting_10, ... casting_100. Other numbered device families use
+  the same ordering. Station Setup already uses numeric casting order.
+
 ## Liquid Resource Monitor 1.1.0 - Managed whole-block basins
 
 Date: 2026-11-17

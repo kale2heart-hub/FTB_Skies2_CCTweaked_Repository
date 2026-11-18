@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.1","suite":"crafting-center","id":"scan","title":"Diagnostics","args":[],"description":"Read connected blocks, fluids, inventories and methods.","category":"Console Scripts"}
+-- @crafting-center {"version":"1.0.2","suite":"crafting-center","id":"scan","title":"Diagnostics","args":[],"description":"Read connected blocks, fluids, inventories and methods.","category":"Console Scripts"}
 -- CC:Tweaked read-only, on-computer diagnostics. Run: scan
 -- Discovers capabilities; NEVER invokes transfers, redstone or casting.
 local ROOT=fs.getDir(shell.getRunningProgram())
@@ -12,9 +12,16 @@ local function call(name,method,...)
   if not ok then return nil,tostring(a) end
   return a,nil,b
 end
+local function deviceLess(a,b)
+ local ap,an=a:match("^(.-)_(%d+)$");local bp,bn=b:match("^(.-)_(%d+)$")
+ ap,bp=ap or a,bp or b
+ if ap~=bp then return ap<bp end
+ if an and bn and tonumber(an)~=tonumber(bn) then return tonumber(an)<tonumber(bn) end
+ return a<b
+end
 local function collect()
   devices={}
-  local names=peripheral.getNames(); table.sort(names)
+  local names=peripheral.getNames(); table.sort(names,deviceLess)
   for _,name in ipairs(names) do
     local d={name=name,methods={},types={}}
     local ok,methods=pcall(peripheral.getMethods,name)

@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
+-- @crafting-center {"version":"1.1.1","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -22,6 +22,13 @@ local function isStorageSource(name,m)
  end
  return false
 end
+local function deviceLess(a,b)
+ local ap,an=a:match("^(.-)_(%d+)$");local bp,bn=b:match("^(.-)_(%d+)$")
+ ap,bp=ap or a,bp or b
+ if ap~=bp then return ap<bp end
+ if an and bn and tonumber(an)~=tonumber(bn) then return tonumber(an)<tonumber(bn) end
+ return a<b
+end
 local function choose(key,kind,multi)
  choices={};field=key;multiple=multi
  for _,name in ipairs(peripheral.getNames()) do
@@ -37,7 +44,7 @@ local function choose(key,kind,multi)
   elseif key=="blockOutputChest" then valid=m.list and m.size and m.pushItems and not m.tanks end
   if valid then choices[#choices+1]=name end
  end
- table.sort(choices);view="choose";selected=1;offset=0;message="Enter selects/toggles | B returns"
+ table.sort(choices,deviceLess);view="choose";selected=1;offset=0;message="Enter selects/toggles | B returns"
 end
 local function value(key)
  return c[key]

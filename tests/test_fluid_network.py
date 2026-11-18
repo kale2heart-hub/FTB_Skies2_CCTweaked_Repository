@@ -292,6 +292,17 @@ l.execute(r"""
  local saved=textutils.unserialize(files['root/fluid_network.txt']);assert(saved.basins[1]=='productivemetalworks:casting_42' and saved.blockOutputChest=='sophisticatedstorage:chest_9' and saved.outputs==nil)
 """)
 print('PASS managed-basin setup: Gear destinations excluded, multiple-basin selection, inventory-only output chest and saved basin-only assignments')
+
+setup=(R/'network_setup.lua').read_text()
+l.globals().orderedPicker=setup[:setup.rindex('while true do')]+"\nreturn {choose=choose,entries=entries}"
+l.execute(r"""
+ local order={103,10,1,100,2,9,0,101,5,3,8,4,7,6}
+ peripheral.getNames=function() local names={};for _,n in ipairs(order) do names[#names+1]='productivemetalworks:casting_'..n end;return names end
+ local picker=assert(load(orderedPicker))();picker.choose('destinations','fluid',true)
+ local rows=picker.entries();local expected={0,1,2,3,4,5,6,7,8,9,10,100,101,103}
+ for i,n in ipairs(expected) do assert(tonumber(rows[i].label:match('_(%d+)$'))==n,rows[i].label) end
+""")
+print('PASS numeric casting order: 0 through 10, then 100/101/103')
 for p in R.glob('*.lua'):
  ok,err=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,err)
 print('PASS all scripts compile in Lua 5.2')
