@@ -2,8 +2,30 @@
 
 Gear UI core history is grouped under the 1.0.x version scheme. Earlier
 internal development labels have been consolidated into the entries below;
-1.1.0 is the current Gear UI version. Supporting scripts retain independent
+1.2.0 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
+
+## Gear UI 1.2.0 / Fluid Monitor 1.3.0 - Independent computer setup
+
+Date: 2026-11-17
+
+- Network Setup 1.3.0 shows only fields belonging to the current computer's role.
+  Gear defines local displays/stations; Fluid defines local storage/basins/output.
+  Each computer still specifies its partner's ID.
+- Gear announces actual Station Setup bindings, the manual station, its chests,
+  displays and optional extra station reservations over Rednet. The Fluid server
+  no longer requires a copied Gear destination list; old duplicates are ignored.
+- The service checks ownership against local displays, both fluid stores, basins,
+  output inventory and other registered Gear computers before authorizing pours.
+- Queue heartbeats repeat the layout, restoring registration after a server restart.
+  Local casting waits for ownership registration and a fresh Gear queue heartbeat.
+- Device conflicts stop Gear display/palette updates and reject pours, report the
+  peripheral in its console, and recover with a full redraw after validation succeeds.
+- Role-specific presets reserve Gear casting_0-42 on Gear, and basins 43-105 on Fluid.
+  Neither preset modifies the other computer's settings or resets existing work.
+- Network Settings/Service are 1.3.0; Fluid Client is 1.1.0; Casting Test is 1.2.0.
+- Local tests cover independent role menus, overlap rejection, unannounced targets,
+  restart/heartbeat registration recovery, source isolation and normal Gear casting.
 
 ## Liquid Resource Monitor / Network Setup / Fluid Service 1.2.0 - Gear-only fluid reserve
 

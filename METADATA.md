@@ -198,3 +198,17 @@ existing queue formats remain valid. Preview planning uses cached stock only.
 - `stock`/`pour` RPCs use the Gear pool when assigned; local block casting uses main.
   Refill transfers use a separate persisted receipt sequence and the main source pool.
 - Existing configurations without `gearSources` retain shared storage behavior.
+
+## Independent ownership exchange
+
+- Gear UI 1.2.0 / Casting Test 1.2.0 announce local devices through Fluid Client
+  1.1.0. Fluid Monitor, Service, Settings and Network Setup are 1.3.0.
+- Shared-network configurations enable assignment exchange. A `register` request
+  carries `layout.monitors`, `layout.destinations`, and `layout.inventories`.
+- Queue `reserve` heartbeats include that layout; their acknowledgment confirms
+  registration. Destination authority is derived from each allowed peer's current
+  validated layout, not Fluid's obsolete `destinations` setting.
+- Registrations are in memory and rebuilt after restart by the next heartbeat.
+  Gear's local `destinations` remains an optional extra reservation list alongside
+  actual station bindings. Fluid saves clear its copied list.
+- All files are already in the updater manifest; no new downloaded files are required.

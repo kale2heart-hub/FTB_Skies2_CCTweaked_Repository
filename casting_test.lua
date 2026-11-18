@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"casting_test","title":"Casting Test","description":"Commission the manual casting table.","dependencies":["fluid_network.lua","fluid_client.lua","gear_config.lua"],"actions":[{"id":"test_inspect","title":"Casting Test: Inspect","args":["inspect"],"description":"Read-only inspection of the manual test table."},{"id":"test_collect","title":"Casting Test: Collect","args":["collect"],"description":"Move one existing test ingot into the output chest.","locks":["casting-state"]},{"id":"test_iron","title":"Casting Test: Iron","args":["iron"],"description":"REAL test: cast one iron ingot using 90 mB on the manual table.","locks":["casting-state"]}],"category":"Tools"}
+-- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"casting_test","title":"Casting Test","description":"Commission the manual casting table.","dependencies":["fluid_network.lua","fluid_client.lua","gear_config.lua"],"actions":[{"id":"test_inspect","title":"Casting Test: Inspect","args":["inspect"],"description":"Read-only inspection of the manual test table."},{"id":"test_collect","title":"Casting Test: Collect","args":["collect"],"description":"Move one existing test ingot into the output chest.","locks":["casting-state"]},{"id":"test_iron","title":"Casting Test: Iron","args":["iron"],"description":"REAL test: cast one iron ingot using 90 mB on the manual table.","locks":["casting-state"]}],"category":"Tools"}
 -- One-shot commissioning test. Separate from the UI and request queue.
 -- casting_test          : inspect only
 -- casting_test collect  : move ONE existing iron/steel ingot to output
@@ -14,9 +14,9 @@ if net.role=="gear" then client=dofile(fs.combine(ROOT,"fluid_client.lua"))(Netw
 if net.role=="fluid" then error("Use Gear computer for Casting Test; monitor casting uses its assigned buffers",0) end
 local TABLE=C.manualCastingTable or C.castingTable or "productivemetalworks:casting_1"
 local SOURCE=client and Network.source or (C.fluidStores or {})[1] or "functionalstorage:storage_controller_0"
-if client then client.checkAssignments({Manual={peripheral=TABLE}}) end
 local OUTPUT=C.outputChest~="" and C.outputChest or nil
 OUTPUT=OUTPUT or "sophisticatedstorage:chest_2"
+if client then client.checkAssignments({Manual={peripheral=TABLE}},{OUTPUT}) end
 local IRON="productivemetalworks:molten_iron"
 local CAST_WAIT=3 -- Minimum cooling time after a successful fluid transfer.
 local DELIVERY_WAIT=10 -- Retry only extraction, never fluid insertion.

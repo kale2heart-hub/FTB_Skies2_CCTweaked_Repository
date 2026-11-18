@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
+-- @crafting-center {"version":"1.3.0","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -44,7 +44,7 @@ local function choose(key,kind,multi)
   if key=="basins" or key=="destinations" then
    local casting=m.tanks and m.list and m.pushItems and
     (name:match("^productivemetalworks:casting_")~=nil or peripheral.hasType(name,"productivemetalworks:casting"))
-   local other=key=="basins" and c.destinations or c.basins
+   local other={} -- Peer assignments are validated over Rednet by the applications.
    -- Keep existing conflicts visible so they can be deselected, never silently reassigned.
    valid=casting and ((not has(other,name) and not has(c.sources,name) and not has(c.gearSources,name)) or has(c[key],name))
   elseif key=="blockOutputChest" then valid=m.list and m.size and m.pushItems and not m.tanks end
@@ -80,7 +80,6 @@ local function save()
    assert(isStorageSource(name,methods(name)),"Gear-only source must be a connected Functional Storage fluid device: "..name)
   end
   assert(#c.clients>0 and c.clients[1]~=os.getComputerID(),"Set the Gear computer ID")
-  assert(#c.destinations>0,"Allow the Gear casting destinations")
   local reserved={}
   local function reserve(name,owner)
    if reserved[name] then
@@ -91,7 +90,6 @@ local function save()
   end
   for _,name in ipairs(c.sources) do reserve(name,"a main fluid storage source") end
   for _,name in ipairs(c.gearSources) do reserve(name,"a Gear-only fluid storage source") end
-  for _,name in ipairs(c.destinations) do reserve(name,"a Gear casting destination") end
   for _,name in ipairs(c.basins) do
    reserve(name,"a managed block basin")
    local m=methods(name);assert(m.list and m.tanks and m.pushItems,"Basin must expose fluids and item output: "..name)
@@ -101,6 +99,8 @@ local function save()
    assert(not reserved[output],"Output chest cannot be a basin, fluid source or Gear station")
    local m=methods(output);assert(m.list and m.size and m.pushItems,"Block output must be an inventory")
   end
+  c.destinations={} -- Gear's live registration supplies its stations; do not duplicate them here.
+  c.serverId=nil
   c.outputs=nil -- Retire the old ingot/block buffer assignments without reusing them as basins.
  end
  N.save(ROOT,c);message="Saved fluid_network.txt. Restart the affected application to apply."
@@ -112,8 +112,7 @@ local function entries()
   elseif field=="basins" then rows[1]={label="Clear managed basin selections",action=function() c.basins={} end} end
   for _,name in ipairs(choices) do
    local current=value(field);local active=multiple and has(current or {},name) or current==name
-   local conflict=(field=="basins" and has(c.destinations,name)) or (field=="destinations" and has(c.basins,name)) or
-    (field=="sources" and has(c.gearSources,name)) or (field=="gearSources" and has(c.sources,name))
+   local conflict=(field=="sources" and has(c.gearSources,name)) or (field=="gearSources" and has(c.sources,name))
    rows[#rows+1]={label=(active and "[x] " or "[ ] ")..name..(conflict and " [CONFLICT]" or ""),action=function()
     if multiple then
      if conflict and not has(c[field],name) then message="Device belongs to the other system; remove that assignment first";return end
@@ -123,28 +122,35 @@ local function entries()
   end
   return rows
  end
- return {
+ local rows={
   {label="Role: "..c.role,action=function() c.role=c.role=="gear" and "fluid" or "gear" end},
   {label="Local wired modem: "..tostring(c.modem or "unset"),action=function() choose("modem","modem",false) end},
   {label="Assigned monitors: "..#c.monitors,action=function() choose("monitors","monitor",true) end},
-  {label="Fluid: Computer ID: "..tostring(c.serverId or "unset"),action=function() input("serverId","Fluid: Computer ID") end},
-  {label="Gear: Computer ID: "..tostring(c.clients[1] or "unset"),action=function() input("client","Gear: Computer ID") end},
-  {label="Main fluid storage sources: "..#c.sources,action=function() choose("sources","fluid",true) end},
-  {label="Gear-only fluid storage: "..#c.gearSources,action=function() choose("gearSources","fluid",true) end},
-  {label="Default Gear minimum: "..c.gearMinimumDefault.." mB",action=function() input("gearMinimumDefault","Minimum per fluid (mB)") end},
-  {label="Allowed Gear casting destinations: "..#c.destinations,action=function() choose("destinations","fluid",true) end},
-  {label="Managed block basins: "..#c.basins,action=function() choose("basins","basin",true) end},
-  {label="Block output chest: "..tostring(c.blockOutputChest or "unset"),action=function() choose("blockOutputChest","inventory",false) end},
-  {label="Extra reserve for monitor casting: "..c.keepMb.." mB",action=function() input("keepMb","Additional fluid reserve per material (mB)") end},
-  {label="Disable local block casting",action=function() c.basins={};c.blockOutputChest=nil;c.outputs=nil;message="Basins cleared; fluid monitoring and Gear requests remain available" end},
-  {label="Apply ranges: Gear 0-42 / Basins 43-105",action=function()
-   c.destinations={};c.basins={}
-   for i=0,42 do c.destinations[#c.destinations+1]="productivemetalworks:casting_"..i end
-   for i=43,105 do c.basins[#c.basins+1]="productivemetalworks:casting_"..i end
-   message="Draft: Gear 0-42; managed basins 43-105. Select SAVE to apply."
-  end},
-  {label="SAVE configuration",action=save},
  }
+ local function add(label,action) rows[#rows+1]={label=label,action=action} end
+ if c.role=="gear" then
+  add("Fluid: Computer ID: "..tostring(c.serverId or "unset"),function() input("serverId","Fluid: Computer ID") end)
+  add("Additional Gear stations: "..#c.destinations,function() choose("destinations","fluid",true) end)
+  add("Reserve Gear casting_0 through casting_42",function()
+   c.destinations={};for i=0,42 do c.destinations[#c.destinations+1]="productivemetalworks:casting_"..i end
+   message="Draft Gear range 0-42. Active Station Setup assignments are also announced automatically."
+  end)
+ elseif c.role=="fluid" then
+  add("Gear: Computer ID: "..tostring(c.clients[1] or "unset"),function() input("client","Gear: Computer ID") end)
+  add("Main fluid storage sources: "..#c.sources,function() choose("sources","fluid",true) end)
+  add("Gear-only fluid storage: "..#c.gearSources,function() choose("gearSources","fluid",true) end)
+  add("Default Gear minimum: "..c.gearMinimumDefault.." mB",function() input("gearMinimumDefault","Minimum per fluid (mB)") end)
+  add("Managed block basins: "..#c.basins,function() choose("basins","basin",true) end)
+  add("Block output chest: "..tostring(c.blockOutputChest or "unset"),function() choose("blockOutputChest","inventory",false) end)
+  add("Extra reserve for monitor casting: "..c.keepMb.." mB",function() input("keepMb","Additional fluid reserve per material (mB)") end)
+  add("Disable local block casting",function() c.basins={};c.blockOutputChest=nil;c.outputs=nil;message="Basins cleared; fluid service remains available" end)
+  add("Apply managed basin range 43-105",function()
+   c.basins={};for i=43,105 do c.basins[#c.basins+1]="productivemetalworks:casting_"..i end
+   message="Draft Fluid basins 43-105. Gear defines its own stations on the other computer."
+  end)
+ end
+ add("SAVE configuration",save)
+ return rows
 end
 local function draw()
  local w,h=term.getSize();local rows=entries();local visible=math.max(1,h-9)

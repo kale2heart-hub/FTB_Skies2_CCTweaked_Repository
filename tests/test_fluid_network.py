@@ -30,6 +30,7 @@ l.execute(r'''
   error(method)
  end,hasType=function() return true end}
  config={role='fluid',modem='left',monitors={'fluid_monitor'},sources={'a','b'},destinations={'gear_table'},basins={'ingot_buffer','block_buffer'},clients={10},keepMb=0}
+ function findAction(rows,prefix) for _,row in ipairs(rows) do if row.label:sub(1,#prefix)==prefix then return row.action end end;error('Missing action '..prefix) end
  Network=assert(load(fluid_networkSource))();factory=assert(load(fluid_serviceSource))();service=factory('root',config)
  local function request(id,method,args,sender) return service.handle(sender or 10,{version=1,id='10:100000:'..id,method=method,args=args}) end
  assert(not pcall(request,1,'stock',{},11))
@@ -158,7 +159,7 @@ l.execute(r"""
  App=assert(load(appSource))();App.connect();App.S.fluid='productivemetalworks:molten_iron';App.S.minimum=10000;App.S.stock={{name=App.S.fluid,amount=10000}}
  for _,screen in ipairs({'welcome','main','resources','automatic','material','review','queue','utilities','acknowledge','gearStock','gearMinimum'}) do App.S.screen=screen;App.render() end
  App.S.screen='main';App.render();local beforeWrites=writes;App.render();assert(writes==beforeWrites)
- App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
+ App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={},layout={monitors={'gear_monitor'},destinations={'gear_table'},inventories={}}}})
  assert(not pcall(App.enqueue,App.S.fluid,'Ingot',1,false))
  App.enqueue(App.S.fluid,'Block',4,false);assert(#App.Q.jobs==1 and App.Q.jobs[1].remaining==4*810)
  local worker=coroutine.create(App.worker)
@@ -176,7 +177,7 @@ l.execute(r"""
  local before=calls;App.Q.paused=false;blocked=false;step(2);assert(#App.Q.jobs==0 and blocksOut==5 and calls==before)
  -- Restart during cooling reuses the persistent basin unit without another pour.
  App.enqueue(App.S.fluid,'Block',1,false);step(2);assert(B.basin1.fluid==810)
- before=calls;now=now+4;App=assert(load(appSource))();App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
+ before=calls;now=now+4;App=assert(load(appSource))();App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={},layout={monitors={'gear_monitor'},destinations={'gear_table'},inventories={}}}})
  worker=coroutine.create(App.worker);step(2);assert(#App.Q.jobs==0 and blocksOut==6 and calls==before)
  -- Cancelling waiting quantity preserves active basin casts and their output.
  App.S.fluid='productivemetalworks:molten_iron'
@@ -189,9 +190,9 @@ l.execute(r"""
  files['root/fluid_auto.txt']=textutils.serialize({['productivemetalworks:molten_iron']=true})
  App=assert(load(appSource))()
  local poll=coroutine.create(App.stockWorker);local ok,e=coroutine.resume(poll);assert(ok,e);assert(#App.Q.jobs==0)
- App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={['productivemetalworks:molten_iron']=900000}}})
+ App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={['productivemetalworks:molten_iron']=900000},layout={monitors={'gear_monitor'},destinations={'gear_table'},inventories={}}}})
  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e);assert(#App.Q.jobs==0)
- App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
+ App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={},layout={monitors={'gear_monitor'},destinations={'gear_table'},inventories={}}}})
  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e)
  assert(#App.Q.jobs==1 and App.Q.jobs[1].automatic and App.Q.jobs[1].mode=='basin_blocks' and App.Q.jobs[1].remaining==64*810)
 """)
@@ -201,7 +202,7 @@ l.execute(r"""
  local manager=assert(load(basin_castingSource))()(config,App.service)
  local function fresh(id)
   B.basin1={fluid=0};B.basin2={fluid=0};balances.b=100000;neverCool=false;extractError=false;blocked=false;limit=1000000
-  App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
+  App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={},layout={monitors={'gear_monitor'},destinations={'gear_table'},inventories={}}}})
   return {id=id,mode='basin_blocks',fluid='productivemetalworks:molten_iron',shape='Block',quantity=1,amount=810,outputs={'minecraft:iron_block'},completed=0,remaining=810,units={}}
  end
  local job=fresh(100);local snapshot
@@ -240,7 +241,7 @@ l.execute(r"""
  files['root/fluid_network.txt']=textutils.serialize(nc)
  os.getComputerID=function() return 10 end
  keys={q=1,b=2,backspace=3,up=4,down=5,pageUp=6,pageDown=7,enter=8,r=9}
- local input={};for i=1,14 do input[#input+1]={'key',keys.down} end
+ local input={};for i=1,6 do input[#input+1]={'key',keys.down} end
  input[#input+1]={'key',keys.enter};input[#input+1]={'key',keys.q}
  os.pullEvent=function() local event=table.remove(input,1);assert(event,'Console loop did not exit');return table.unpack(event) end
  term={getSize=function() return 60,22 end,setCursorPos=function(x,y) assert(x>=1 and x<=60 and y>=1 and y<=22) end,
@@ -286,12 +287,12 @@ l.execute(r"""
  end
  peripheral.hasType=function() return false end
  local picker=assert(load(sourcePicker))();picker.choose('basins','basin',true)
- local rows=picker.entries();assert(#rows==2 and rows[2].label=='[ ] productivemetalworks:casting_42');rows[2].action()
+ local rows=picker.entries();assert(#rows==3);findAction(rows,'[ ] productivemetalworks:casting_42')()
  picker.choose('blockOutputChest','inventory',false);rows=picker.entries();assert(#rows==1 and rows[1].label=='[ ] sophisticatedstorage:chest_9');rows[1].action()
- rows=picker.entries();rows[15].action()
+ rows=picker.entries();findAction(rows,'SAVE')()
  local saved=textutils.unserialize(files['root/fluid_network.txt']);assert(saved.basins[1]=='productivemetalworks:casting_42' and saved.blockOutputChest=='sophisticatedstorage:chest_9' and saved.outputs==nil)
 """)
-print('PASS managed-basin setup: Gear destinations excluded, multiple-basin selection, inventory-only output chest and saved basin-only assignments')
+print('PASS Fluid setup: local basins and inventory-only output can be assigned without duplicating Gear stations')
 
 setup=(R/'network_setup.lua').read_text()
 l.globals().orderedPicker=setup[:setup.rindex('while true do')]+"\nreturn {choose=choose,entries=entries}"
@@ -305,24 +306,23 @@ l.execute(r"""
 print('PASS numeric casting order: 0 through 10, then 100/101/103')
 
 l.execute(r"""
- -- Existing overlaps can be deselected; the range action removes stale/duplicate assignments.
  local cfg=textutils.unserialize(files['root/fluid_network.txt'])
- cfg.destinations={'productivemetalworks:casting_42'};cfg.basins={'productivemetalworks:casting_42'}
+ cfg.role='fluid';cfg.destinations={'productivemetalworks:casting_42'};cfg.basins={}
  files['root/fluid_network.txt']=textutils.serialize(cfg)
- peripheral.getNames=function() return {'productivemetalworks:casting_42','sophisticatedstorage:chest_9'} end
- local picker=assert(load(orderedPicker))();picker.choose('basins','basin',true)
- local rows=picker.entries();assert(rows[2].label:find('[CONFLICT]',1,true));rows[2].action()
- picker.choose('blockOutputChest','inventory',false);rows=picker.entries();rows[1].action()
- rows=picker.entries();rows[14].action();rows[15].action()
- local saved=textutils.unserialize(files['root/fluid_network.txt'])
- assert(#saved.destinations==43 and #saved.basins==63)
- assert(saved.destinations[1]=='productivemetalworks:casting_0' and saved.destinations[43]=='productivemetalworks:casting_42')
- assert(saved.basins[1]=='productivemetalworks:casting_43' and saved.basins[63]=='productivemetalworks:casting_105')
- local used={};for _,name in ipairs(saved.destinations) do used[name]=true end;for _,name in ipairs(saved.basins) do assert(not used[name]);used[name]=true end
+ local picker=assert(load(orderedPicker))();local rows=picker.entries()
+ assert(not pcall(findAction,rows,'Fluid: Computer ID') and not pcall(findAction,rows,'Additional Gear'))
+ findAction(rows,'Apply managed basin range')();findAction(rows,'SAVE')()
+ local saved=Network.load('root');assert(#saved.destinations==0 and #saved.basins==63 and saved.basins[1]=='productivemetalworks:casting_43' and saved.basins[63]=='productivemetalworks:casting_105')
  assert(saved.blockOutputChest=='sophisticatedstorage:chest_9')
+ files['root/fluid_network.txt']=textutils.serialize({role='gear',modem='left',monitors={'gear_monitor'},serverId=20})
+ os.getComputerID=function() return 10 end
+ picker=assert(load(orderedPicker))();rows=picker.entries()
+ assert(not pcall(findAction,rows,'Gear: Computer ID') and not pcall(findAction,rows,'Main fluid storage') and not pcall(findAction,rows,'Managed block'))
+ findAction(rows,'Reserve Gear casting_0')();findAction(rows,'SAVE')()
+ saved=Network.load('root');assert(#saved.destinations==43 and saved.destinations[1]=='productivemetalworks:casting_0' and saved.destinations[43]=='productivemetalworks:casting_42')
+ os.getComputerID=function() return 20 end
 """)
-print('PASS existing conflicts can be deselected; exact Gear 0-42 / basin 43-105 plan saves without overlaps and preserves output assignment')
-
+print('PASS role-specific menus: Gear defines 0-42; Fluid defines 43-105; partner fields/local resources are not duplicated')
 l.execute(r"""
  -- Dedicated Gear storage is a distinct pool: only refills flow main -> Gear.
  local iron='productivemetalworks:molten_iron';local diamond='productivemetalworks:molten_diamond'
@@ -397,12 +397,57 @@ l.execute(r"""
  local rows=picker.entries();assert(#rows==2 and rows[2].label=='[ ] '..gear);rows[2].action()
  -- Returning to a main-menu instance with the selection represented in saved settings.
  local cfg=Network.load('root');cfg.gearSources={gear};Network.save('root',cfg)
- picker=assert(load(orderedPicker))();rows=picker.entries();rows[15].action()
+ picker=assert(load(orderedPicker))();rows=picker.entries();findAction(rows,'SAVE')()
  saved=Network.load('root');assert(saved.gearMinimumDefault==10000 and saved.gearSources[1]==gear)
  cfg.gearSources={main};Network.save('root',cfg);picker=assert(load(orderedPicker))();rows=picker.entries()
- local ok,e=pcall(rows[15].action);assert(not ok and tostring(e):find('conflicts',1,true))
+ local ok,e=pcall(findAction(rows,'SAVE'));assert(not ok and tostring(e):find('conflicts',1,true))
 """)
 print('PASS Gear target editor persistence/default reset, live service targets, rendered Gear stock pages, disjoint Functional Storage selectors and minimum defaults')
+
+l.execute(r"""
+ -- Production exchange mode ignores duplicated/obsolete remote station settings.
+ local cfg={assignmentExchange=true,sources={'fluid_supply'},gearSources={},destinations={'obsolete','fluid_basin'},basins={'fluid_basin'},monitors={'fluid_display'},blockOutputChest='fluid_output',clients={10}}
+ local stock=1000;local poured=0
+ peripheral.call=function(name,method,...)
+  if method=='tanks' then assert(name=='fluid_supply');return {{name='productivemetalworks:molten_iron',amount=stock}} end
+  if method=='pushFluid' then local target,amount,fluid=...;assert(name=='fluid_supply' and target=='gear_station');stock=stock-amount;poured=poured+amount;return amount end
+  if method=='isWireless' then return false end
+  error(method)
+ end
+ local svc=factory('ownership',cfg)
+ local layout={monitors={'gear_display'},destinations={'gear_station','productivemetalworks:casting_42'},inventories={'gear_parts','gear_casts','gear_output'}}
+ local function rpc(method,args,id,sender) return svc.handle(sender or 10,{version=1,id=id or 'layout',method=method,args=args}) end
+ assert(not svc.readyForLocal())
+ assert(not pcall(rpc,'pour',{target='obsolete',fluid='productivemetalworks:molten_iron',amount=90},'10:500000:1'))
+ rpc('register',{layout=layout});rpc('reserve',{demand={},layout=layout});assert(svc.readyForLocal())
+ for _,conflict in ipairs({'fluid_display','fluid_supply','fluid_basin','fluid_output'}) do
+  local bad={monitors={},destinations={'gear_station'},inventories={conflict}}
+  local ok,e=pcall(rpc,'register',{layout=bad});assert(not ok and tostring(e):find(conflict,1,true))
+ end
+ cfg.clients[2]=11
+ local ok,e=pcall(rpc,'register',{layout=layout},'other',11);assert(not ok and tostring(e):find('Gear computer 10',1,true))
+ cfg.clients[2]=nil
+ rpc('pour',{target='gear_station',fluid='productivemetalworks:molten_iron',amount=90},'10:500000:2');assert(poured==90)
+ svc=factory('ownership',cfg)
+ assert(not pcall(rpc,'pour',{target='gear_station',fluid='productivemetalworks:molten_iron',amount=90},'10:500000:3'))
+ rpc('reserve',{demand={},layout=layout});assert(svc.readyForLocal())
+ rpc('pour',{target='gear_station',fluid='productivemetalworks:molten_iron',amount=90},'10:500000:4');assert(poured==180)
+ -- A live client repeats the layout with heartbeats and flags an ownership conflict.
+ local pending={};local timer=0
+ os.startTimer=function() timer=timer+1;return timer end;os.cancelTimer=function() end
+ os.getComputerID=function() return 10 end;os.pullEvent=function() return table.unpack(table.remove(pending,1)) end
+ rednet={open=function() end,send=function(peer,message,protocol)
+  local success,result=pcall(svc.handle,10,message)
+  pending[#pending+1]={'rednet_message',20,{version=1,id=message.id,ok=success,result=success and result,error=not success and tostring(result)},protocol};return true
+ end}
+ local client=assert(load(fluid_clientSource))()(Network,{modem='left',serverId=20,monitors={'gear_display'},destinations={'productivemetalworks:casting_42'}})
+ client.checkAssignments({Sword={peripheral='gear_station'}},{'gear_parts'})
+ client.reserve({});svc=factory('ownership',cfg);client.reserve({});assert(svc.registrations[10].destinations['productivemetalworks:casting_42'])
+ cfg.monitors={'gear_display'}
+ assert(not pcall(client.reserve,{}) and client.assignmentError:find('gear_display',1,true))
+ cfg.monitors={'fluid_display'};client.reserve({});assert(client.assignmentError==nil)
+""")
+print('PASS Rednet ownership exchange: no copied Gear list, monitor/storage/basin/chest and other-peer overlap rejection, unannounced pours denied, heartbeat re-registration after server restart, client conflict quarantine and recovery')
 for p in R.glob('*.lua'):
  ok,err=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,err)
 print('PASS all scripts compile in Lua 5.2')

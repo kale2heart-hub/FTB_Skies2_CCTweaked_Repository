@@ -17,3 +17,7 @@ Dedicated-store tests also verify exclusive main/Gear routing, 10,000 mB default
 refill priority, per-fluid/default/zero targets, blocked capacity, queued demand,
 measured partial refills, restart-safe receipt IDs, selector overlap validation,
 and saved on-monitor minimum edits without losing device assignments.
+
+Ownership-exchange checks cover role-specific menus, independent station-range
+presets, server-side monitor/storage/basin/chest/peer conflicts, registration-only
+pour authority, heartbeat re-registration after restart, and client quarantine.

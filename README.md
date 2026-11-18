@@ -298,7 +298,7 @@ any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
 
-## Shared fluid network (Gear UI 1.1.0 / Liquid Resource Monitor 1.2.0)
+## Shared fluid network (Gear UI 1.2.0 / Liquid Resource Monitor 1.3.0)
 
 The two computers share a wired modem network. Liquid Resource Monitor owns the
 Functional Storage fluid supply and serializes transfers. Gear UI requests exact
@@ -317,19 +317,21 @@ and collects it into a dedicated output chest.
    **Main fluid storage sources**, and enter **Gear: Computer ID**. Assign the
    second controller/drawer bank under **Gear-only fluid storage**. Both selectors
    accept Functional Storage fluid devices. Default Gear minimum is 10,000 mB.
-   Select the allowed Gear destinations: Gear's basin and assigned casting tables
-   (current reserved range: casting_0 through casting_42, including the manual
-   test station). Use **Apply ranges: Gear 0-42 / Basins 43-105** to fill both lists.
 4. Select **Managed block basins** for the Fluid Monitor. Use additional physical
    basins (casting_43 through casting_105), separate from Gear's casting_0 through
-   casting_42. The selector excludes
-   assigned Gear destinations. Productive Metalworks exposes tables and basins
+   casting_42. **Apply managed basin range 43-105** fills this local list.
+   Productive Metalworks exposes tables and basins
    with the same casting peripheral type: select the devices that are physically
    basins. Assign **Block output chest** to collect the completed blocks.
 5. On the Gear computer choose role **gear**, assign its in/out/dev monitors
-   (up to three), and enter **Fluid: Computer ID**. Save on both computers.
-6. Start **Liquid Resource Monitor** first, then Gear UI. Gear checks for overlapping
-   monitor/basin assignments before drawing.
+   (up to three), and enter **Fluid: Computer ID**. Existing Gear Station Setup
+   bindings, its manual test station and chests are announced automatically.
+   **Reserve Gear casting_0 through casting_42** adds that reserved local range;
+   other extra stations may be selected under **Additional Gear stations**.
+   Save each computer's configuration independently.
+6. Start **Liquid Resource Monitor** first, then Gear UI. Gear registers its owned
+   devices over Rednet before drawing; overlapping displays, stations, storage
+   or chests are rejected with the conflicting peripheral name.
 
 Select each storage controller once; do not also select its linked drawers or
 another alias for the same storage, which would double-count available fluid.
@@ -411,3 +413,25 @@ On the fluid computer, assign the second store in Network Setup, save, and resta
 Liquid Resource Monitor to activate the new source pool. These must be separate
 underlying drawer banks, not aliases or two controllers linked to the same drawers.
 Without a Gear-only source assignment the earlier shared-store behavior remains.
+
+### Independent setup and assignment exchange
+
+Network Setup shows only the current role's fields. The Gear computer defines its
+own displays, Station Setup bindings, extra/reserved stations, chests and Fluid
+computer ID. The Fluid computer defines its own displays, both fluid stores,
+minimum targets, basins, output chest and Gear computer ID. **Do not copy Gear's
+station list to the Fluid computer.** Older duplicate lists there are ignored and
+removed on the next save.
+
+Gear announces its station/display/chest ownership at startup and with queue
+heartbeats. The Fluid service validates it against its own devices and registered
+peers before granting access to a casting destination. After a Fluid restart,
+Gear's next heartbeat registers the layout again. Local block casting waits for
+that exchange and a fresh queue heartbeat.
+
+If a later registration reports a device conflict, Gear stops monitor updates and
+refuses new fluid pours, and reports the name in its console. Correct the owning
+computer's settings and restart affected applications. Successful registration
+restores Gear rendering, including a full screen refresh. Update/restart both
+applications when first enabling this protocol; station bindings and queued work
+are retained. No remote settings are edited by the peer.

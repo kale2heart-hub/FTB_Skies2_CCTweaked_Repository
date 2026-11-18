@@ -1,6 +1,6 @@
--- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
+-- @crafting-center {"version":"1.3.0","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
 return function(root,c)
- local T={busy=false,holds={},last="Ready"}
+ local T={busy=false,holds={},registrations={},last="Ready"}
  local path=fs.combine(root,"fluid_transfers.txt")
  local state={records={},order={}}
  local function read(p)
@@ -38,7 +38,9 @@ return function(root,c)
  end
  local dedicated=next(gearSources)~=nil
  local targets={}
- for _,name in ipairs(c.destinations or {}) do assert(not sources[name] and not gearSources[name],"Gear station overlaps fluid storage: "..name);targets[name]=true end
+ if not c.assignmentExchange then
+  for _,name in ipairs(c.destinations or {}) do assert(not sources[name] and not gearSources[name],"Gear station overlaps fluid storage: "..name);targets[name]=true end
+ end
  for _,name in ipairs(c.basins or {}) do
   assert(not targets[name] and not sources[name] and not gearSources[name],"Managed basins must be separate from Gear tables/storage and listed once")
   targets[name]="local"
@@ -56,6 +58,38 @@ return function(root,c)
   for fluid,amount in pairs(totals) do rows[#rows+1]={name=fluid,amount=amount} end
   table.sort(rows,function(a,b) return a.name<b.name end)
   return rows
+ end
+ function T.info()
+  local outputs={};for i,name in ipairs(c.basins or {}) do outputs["Basin"..i]=name end
+  return {monitors=c.monitors or {},outputs=outputs,basins=c.basins or {},computerId=os.getComputerID(),assignmentExchange=true}
+ end
+ function T.register(sender,layout)
+  assert(knownClient(sender),"Gear computer is not assigned in Network Setup")
+  assert(type(layout)=="table","Gear device assignments missing")
+  local mine={}
+  local function add(name,owner) if type(name)=="string" and name~="" then mine[name]=owner end end
+  for _,name in ipairs(c.monitors or {}) do add(name,"Fluid monitor") end
+  for name in pairs(sources) do add(name,"main fluid storage") end
+  for name in pairs(gearSources) do add(name,"Gear-only fluid storage managed by Fluid") end
+  for _,name in ipairs(c.basins or {}) do add(name,"Fluid block basin") end
+  add(c.blockOutputChest,"Fluid block output chest")
+  for client,entry in pairs(T.registrations) do if client~=sender then
+   for name in pairs(entry.claims) do add(name,"Gear computer "..client) end
+  end end
+  local record={claims={},destinations={}}
+  for _,field in ipairs({"monitors","destinations","inventories"}) do
+   local list=layout[field] or {};assert(type(list)=="table" and #list<=512,"Invalid Gear "..field)
+   for _,name in ipairs(list) do
+    assert(type(name)=="string" and #name>0 and #name<=160,"Invalid Gear peripheral name")
+    assert(not mine[name],"Device conflict: "..name.." belongs to "..tostring(mine[name])..". Change the assignment on its owning computer.")
+    assert(not record.claims[name],"Duplicate Gear device assignment: "..name)
+    record.claims[name]=field
+    if field=="destinations" then record.destinations[name]=true end
+   end
+  end
+  assert(next(record.destinations),"No Gear casting stations were announced")
+  T.registrations[sender]=record
+  return T.info()
  end
  function T.stock() return readStock(sources) end
  function T.gearStock() return readStock(dedicated and gearSources or sources) end
@@ -105,6 +139,7 @@ return function(root,c)
  end
  function T.readyForLocal()
   for _,client in ipairs(c.clients or {}) do
+   if c.assignmentExchange and not T.registrations[client] then return false,"Waiting for Gear device assignments from computer "..client end
    local hold=T.holds[client]
    if not hold or os.clock()-hold.at>15 then return false,"Waiting for Gear queue heartbeat from computer "..client end
   end
@@ -115,7 +150,9 @@ return function(root,c)
   assert(type(args.target)=="string" and type(args.fluid)=="string" and integer(args.amount) and args.amount>0 and args.amount<=1000000,"Invalid fluid, destination or amount")
   local refill=localRequest=="refill"
   assert(not sources[args.target],"Cannot send fluid back into main storage")
-  assert(refill and gearSources[args.target] or localRequest==true and targets[args.target]=="local" or not localRequest and targets[args.target]==true,"Destination is not assigned to this application")
+  local registered=T.registrations[sender]
+  local allowedGear=c.assignmentExchange and registered and registered.destinations[args.target] or not c.assignmentExchange and targets[args.target]==true
+  assert(refill and gearSources[args.target] or localRequest==true and targets[args.target]=="local" or not localRequest and allowedGear,"Destination is not assigned to this application; Gear must announce its current stations")
   if localRequest==true then T.refill(args.fluid) end
   local key=tostring(sender).."|"..id
   local previous=state.records[key]
@@ -201,16 +238,16 @@ return function(root,c)
  function T.handle(sender,message)
   assert(type(message)=="table" and message.version==1 and type(message.id)=="string","Invalid service message")
   assert(knownClient(sender),"Gear computer is not assigned in Network Setup")
-  if message.method=="info" then
-   local outputs={};for i,name in ipairs(c.basins or {}) do outputs["Basin"..i]=name end
-   return {monitors=c.monitors or {},outputs=outputs,basins=c.basins or {},computerId=os.getComputerID()}
-  end
+  if message.method=="info" then return T.info() end
+  if message.method=="register" then return T.register(sender,message.args and message.args.layout) end
   if message.method=="stock" then return T.gearStock() end
   if message.method=="reserve" then
+   if message.args and message.args.layout then T.register(sender,message.args.layout) end
+   assert(not c.assignmentExchange or T.registrations[sender],"Gear must announce device assignments before reserving fluids")
    local demand=message.args and message.args.demand;assert(type(demand)=="table","Invalid queue reservation")
    local clean={};local count=0
    for fluid,amount in pairs(demand) do count=count+1;assert(count<=256 and type(fluid)=="string" and integer(amount),"Invalid queue demand");clean[fluid]=amount end
-   T.holds[sender]={demand=clean,at=os.clock()};return true
+   T.holds[sender]={demand=clean,at=os.clock()};return {reserved=true,registered=T.registrations[sender]~=nil}
   end
   if message.method=="pour" then return T.transfer(sender,message.id,message.args,false) end
   error("Unknown fluid-service method")

@@ -1,7 +1,7 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["fluid_network.lua","fluid_client.lua","gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["fluid_network.lua","fluid_client.lua","gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Live casting and chest-delivery queues, including Gear part kits for manual assembly.
-local VERSION="1.1.0"
+local VERSION="1.2.0"
 local ROOT = fs.getDir(shell.getRunningProgram())
 local C = dofile(fs.combine(ROOT, "gear_config.lua"))
 local Network=dofile(fs.combine(ROOT,"fluid_network.lua"))
@@ -60,7 +60,12 @@ if fs.exists(bindingPath) then
   assert(type(saved)=="table","Unreadable gear_stations.txt")
   for shape,station in pairs(saved) do castStations[shape]=station end
 end
-if networkClient then networkClient.checkAssignments(castStations) end
+if networkClient then
+ local announced={}
+ for role,station in pairs(castStations) do announced[role]=station end
+ announced.Manual={peripheral=C.manualCastingTable}
+ networkClient.checkAssignments(announced,{C.partsChest,C.castChest,C.outputChest})
+end
 local function liveCastingEnabled()
   return C.liveCasting==true or (C.liveCasting==nil and C.liveIronCasting==true)
 end
@@ -188,7 +193,17 @@ local function publishFluidDemand()
   if not networkClient then return end
   local demand={}
   for _,batch in ipairs(Q.batches) do if batch.fluid then demand[batch.fluid]=reservedFluid(batch.fluid) end end
-  networkClient.reserve(demand)
+  local ok,result=pcall(networkClient.reserve,demand)
+  if not ok then
+    if networkClient.assignmentError and S.reportedAssignmentError~=networkClient.assignmentError then
+      printError(networkClient.assignmentError);S.reportedAssignmentError=networkClient.assignmentError
+    end
+    error(result,0)
+  end
+  if S.reportedAssignmentError then
+    for _,display in ipairs(displays) do if display.mon.invalidate then display.mon.invalidate() end end
+  end
+  S.reportedAssignmentError=nil
 end
 if networkClient then networkClient.beforePour=publishFluidDemand end
 local function saveQueue()
@@ -559,6 +574,7 @@ local function bufferedMonitor(real,w,h,scale)
   palettes[slot]={a,b,c,signature}
  end
  function m.clear() blank() end
+ function m.invalidate() sent={};sentPalettes={} end
  function m.blit(text,front,back)
   local length=#text
   if y>=1 and y<=h and length>0 then
@@ -594,6 +610,7 @@ local function bufferedMonitor(real,w,h,scale)
  return m
 end
 local function flushDisplays()
+  if networkClient and networkClient.assignmentError then return end
  local tasks={}
  for _,d in ipairs(displays) do
   local m=d.mon
@@ -603,6 +620,7 @@ local function flushDisplays()
  elseif #tasks>1 then parallel.waitForAll(table.unpack(tasks)) end
 end
 local function connect()
+  if networkClient and networkClient.assignmentError then return end
   displays={}; W,H=math.huge,math.huge
   local names={}
   -- In demo mode, unassigned monitors use a sorted discovery list.
@@ -719,6 +737,7 @@ local function pulseColor(base,target,strength)
   return channel(16),channel(8),channel(0)
 end
 local function updatePulse()
+  if networkClient and networkClient.assignmentError then return end
   if S.screen=="welcome" then if drawWelcome then drawWelcome() end; return end
   local phase=(os.clock()-pulseEpoch)*2*math.pi/3
   local strength=0.03+0.08*(0.5-0.5*math.cos(phase))
@@ -1197,6 +1216,7 @@ local function resumeQueue()
 end
 
 drawJob=function()
+  if networkClient and networkClient.assignmentError then return end
   local j=S.job
   local elapsed=j and j.completedAt and os.clock()-j.completedAt or 0
   if j and j.phase=="completed" and elapsed>=4 then S.job=nil; j=nil end
@@ -1687,6 +1707,7 @@ end
 -- Always paint the overlay after navigation/stock refreshes.
 local renderScreen=render
 render=function()
+  if networkClient and networkClient.assignmentError then return end
   if S.screen=="welcome" then drawWelcome(); return end
   for _,d in ipairs(displays) do
     if d.welcomeActive then d.mon.setTextScale(C.textScale); d.welcomeActive=false; d.welcomePage=nil end

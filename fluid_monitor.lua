@@ -1,5 +1,5 @@
--- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
-local VERSION="1.2.0"
+-- @crafting-center {"version":"1.3.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
+local VERSION="1.3.0"
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)

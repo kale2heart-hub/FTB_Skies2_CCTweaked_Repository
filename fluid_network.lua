@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"fluid_network","title":"Fluid Network Settings","launchable":false,"description":"Explicit per-computer wired network assignments."}
+-- @crafting-center {"version":"1.3.0","suite":"crafting-center","id":"fluid_network","title":"Fluid Network Settings","launchable":false,"description":"Explicit per-computer wired network assignments."}
 local T={protocol="crafting_center.fluids.v1",source="@fluid_service"}
 function T.load(root)
  local path=fs.combine(root,"fluid_network.txt")
@@ -7,6 +7,7 @@ function T.load(root)
  local f=assert(fs.open(path,"r"));local c=textutils.unserialize(f.readAll());f.close()
  assert(type(c)=="table" and (c.role=="gear" or c.role=="fluid" or c.role=="standalone"),"Invalid fluid_network.txt; use Network Setup")
  for _,k in ipairs({"monitors","sources","destinations","clients","basins","gearSources"}) do c[k]=c[k] or {};assert(type(c[k])=="table","Invalid network "..k) end
+ c.assignmentExchange=true
  c.gearMinimumDefault=c.gearMinimumDefault==nil and 10000 or c.gearMinimumDefault
  c.gearMinimums=c.gearMinimums or {}
  assert(type(c.gearMinimumDefault)=="number" and c.gearMinimumDefault>=0 and c.gearMinimumDefault<=1000000000 and c.gearMinimumDefault==math.floor(c.gearMinimumDefault),"Invalid default Gear minimum")
