@@ -4,6 +4,13 @@ This log records major build changes. Script metadata versions remain separate
 and identify individual files. Unreleased entries describe local work that has
 not yet been committed or published as a release.
 
+## Gear UI 2.1.1 - Review tab spacing (Unreleased)
+
+- Review tabs now use a distinct active marker, muted inactive background, and
+  separate underline, with a blank row before content.
+- Selections and Stats & Traits share the same content start; selection paging
+  stays below the list and above quantity controls without covering tab buttons.
+
 ## Updater 1.4.0 - Disk space fix (Unreleased)
 
 Date: 2026-11-17

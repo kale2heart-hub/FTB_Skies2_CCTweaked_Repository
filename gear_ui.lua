@@ -1,4 +1,4 @@
--- @crafting-center {"version":"2.1.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"2.1.1","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Live casting and chest-delivery queues, including Gear part kits for manual assembly.
 local ROOT = fs.getDir(shell.getRunningProgram())
@@ -723,6 +723,13 @@ local function render()
       y=(page==1 or noUp) and 8 or 11}
   end
   local itemList=listPage(#rows,S.page)
+  if S.screen=="review" and S.category~="Other" then
+    -- Keep both tabs above a separate content area and reserve paging above Qty.
+    local count=math.max(1,math.floor((H-19)/3))
+    local total=math.max(1,math.ceil(#rows/count))
+    local page=math.max(1,math.min(S.page or 1,total))
+    itemList={page=page,pages=total,count=count,offset=(page-1)*count,y=10}
+  end
   local pages=itemList.pages
   S.page=itemList.page
   for _,d in ipairs(displays) do
@@ -854,8 +861,11 @@ local function render()
       text(rightX,6,right,S.screen=="review" and "Request summary" or (S.category or "Choose equipment"),colors.blue)
       if S.screen=="review" then
         if S.category~="Other" then
-        button(1,6,left,"Selections",function() S.reviewTab="parts" end,S.reviewTab~="stats" and colors.cyan or colors.blue)
-        button(rightX,6,right,"Stats & Traits",function() S.reviewTab="stats" end,S.reviewTab=="stats" and colors.cyan or colors.blue)
+        local statsActive=S.reviewTab=="stats"
+        button(1,6,left,(not statsActive and "> " or "").."Selections",function() S.reviewTab="parts" end,not statsActive and colors.cyan or colors.gray)
+        button(rightX,6,right,(statsActive and "> " or "").."Stats & Traits",function() S.reviewTab="stats" end,statsActive and colors.cyan or colors.gray)
+        text(1,8,left,string.rep("-",left),colors.black,not statsActive and colors.cyan or colors.gray)
+        text(rightX,8,right,string.rep("-",right),colors.black,statsActive and colors.cyan or colors.gray)
         end
         if S.reviewTab=="stats" and S.category~="Other" then
           local wrapped={}
@@ -915,8 +925,14 @@ local function render()
       end
       if S.screen=="review" then
         if S.reviewTab~="stats" or S.category=="Other" then
-        button(1,8,left,"Up",S.page>1 and function() S.page=S.page-1 end or nil)
-        button(1,H-5,left,"Down",S.page<pages and function() S.page=S.page+1 end or nil)
+        if S.category~="Other" then
+          if pages>1 then line(9,"Page: "..S.page.." / "..pages,colors.black,colors.lightGray) end
+          button(1,H-8,left,"Up",S.page>1 and function() S.page=S.page-1 end or nil)
+          button(rightX,H-8,right,"Down",S.page<pages and function() S.page=S.page+1 end or nil)
+        else
+          button(1,8,left,"Up",S.page>1 and function() S.page=S.page-1 end or nil)
+          button(1,H-5,left,"Down",S.page<pages and function() S.page=S.page+1 end or nil)
+        end
         end
       else
         local cp=listPage(#categories,S.categoryPage).pages
