@@ -43,3 +43,6 @@ Large-batch checks cover the 55,300,000 mB default, material-specific Max,
 over-capacity rejection, automatic batches above 64, narrow-screen quantity
 labels and a 55,299,510 mB feed. Empty basin mocks return nil throughout Pipez
 recovery tests; malformed non-table inventories produce named errors.
+
+Automatic minimum tests check rejection below 64 blocks and admission exactly
+at 64 and above; manual small-quantity coverage remains in the casting tests.

@@ -5,6 +5,20 @@ internal development labels have been consolidated into the entries below;
 1.2.1 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Fluid Monitor 1.5.3 - Automatic casting minimum
+
+Date: 2026-11-18
+
+- Automatic casting waits for at least 64 whole blocks of available unreserved
+  material instead of creating one-block jobs as fluid arrives.
+- Network Setup 1.5.2 exposes Auto minimum batch in blocks; Fluid Network 1.4.2
+  defaults existing and new configurations to 64 and validates positive integers.
+- The threshold applies after Gear reserves, queued demand and tank capacity.
+  Manual quantities and existing queued jobs are unchanged. A tank limit below
+  the minimum prevents automatic batches until settings are adjusted.
+- Local tests cover 1/63 blocks rejected and 64/65 admitted, along with existing
+  manual casting, fluid network and Pipez recovery regressions.
+
 ## Fluid Monitor 1.5.2 - Basin recovery budget
 
 Date: 2026-11-17

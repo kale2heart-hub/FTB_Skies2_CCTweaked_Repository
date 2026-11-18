@@ -204,6 +204,15 @@ l.execute(r"""
  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e)
  local autoAmount=math.floor(App.service.blockAvailable('productivemetalworks:molten_iron',App.S.stock[1].amount)/810)
  assert(#App.Q.jobs==1 and App.Q.jobs[1].automatic and App.Q.jobs[1].mode=='basin_blocks' and App.Q.jobs[1].quantity==autoAmount and autoAmount>64)
+ -- Automatic threshold applies after reserve calculations, including its exact boundary.
+ local kept=App.Q.jobs;local availableFn=App.service.blockAvailable
+ for _,count in ipairs({1,63,64,65}) do
+  App.Q.jobs={};App.service.blockAvailable=function() return count*810 end
+  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e)
+  assert(#App.Q.jobs==(count>=64 and 1 or 0),'automatic minimum boundary '..count)
+  if count>=64 then assert(App.Q.jobs[1].quantity==count) end
+ end
+ App.Q.jobs=kept;App.service.blockAvailable=availableFn
  local tail=App.Q.jobs[1];tail.quantity=64;tail.completed=62;tail.remaining=1620
  tail.units={basin1={phase='cooling',moved=810},basin2={phase='cooling',moved=810}}
  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e)

@@ -1,5 +1,5 @@
--- @crafting-center {"version":"1.5.2","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["pipe_casting.lua","basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
-local VERSION="1.5.2"
+-- @crafting-center {"version":"1.5.3","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["pipe_casting.lua","basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
+local VERSION="1.5.3"
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -375,7 +375,7 @@ local function stockWorker()
      if rule and auto[fluid.name] then
       local available=service.blockAvailable(fluid.name,fluid.amount)-(reserved[fluid.name] or 0)
       local quantity=math.min(batchLimit(fluid.name),math.floor(available/rule.amount))
-      if quantity>=1 then
+      if quantity>=(c.autoMinimumBlocks or 64) then
        enqueue(fluid.name,"Block",quantity,true)
        reserved[fluid.name]=(reserved[fluid.name] or 0)+rule.amount*quantity
        waiting=waiting+quantity;S.autoCursor=index;found=true;break

@@ -251,3 +251,7 @@ Fluid Monitor 1.5.2 uses pipe_casting.lua 1.0.2. Recovery counters remain in
 `job.pipe.recoveries`, but reset per basin after successful block delivery.
 Resume resets the failed job's counters only for recovery-limit errors; pending
 transfer receipts, fluid accounting and completed totals remain intact.
+
+Fluid Monitor 1.5.3 reads `autoMinimumBlocks` from local fluid_network.txt.
+Fluid Network 1.4.2 defaults it to 64; Network Setup 1.5.2 edits it as a positive
+integer. It gates automatic job admission only, after reservation and tank limits.

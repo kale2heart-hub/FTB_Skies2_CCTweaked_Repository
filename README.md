@@ -298,7 +298,7 @@ any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
 
-## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.5.2)
+## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.5.3)
 
 The two computers share a wired modem network. Liquid Resource Monitor owns the
 Functional Storage fluid supply and serializes transfers. Gear UI requests exact
@@ -531,3 +531,11 @@ Fluid Monitor 1.5.2 resets each basin's three-attempt recovery budget after a
 verified block is delivered. Resume after a recovery-limit pause grants the
 failed job a fresh budget and ten-second observation period without resetting
 its fluid ledger or completed quantity.
+
+### Automatic minimum batch (Fluid Monitor 1.5.3)
+
+Automatic casting waits for at least 64 blocks of unreserved fluid by default.
+Network Setup -> Auto minimum batch changes this positive whole-block threshold.
+Larger batches still use available material up to the tank limit; manual casting
+continues to allow one block. Existing queued jobs are preserved. If the tank's
+material-specific maximum is smaller than the minimum, no automatic job is added.

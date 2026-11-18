@@ -1,14 +1,16 @@
--- @crafting-center {"version":"1.4.1","suite":"crafting-center","id":"fluid_network","title":"Fluid Network Settings","launchable":false,"description":"Explicit per-computer wired network assignments."}
+-- @crafting-center {"version":"1.4.2","suite":"crafting-center","id":"fluid_network","title":"Fluid Network Settings","launchable":false,"description":"Explicit per-computer wired network assignments."}
 local T={protocol="crafting_center.fluids.v1",source="@fluid_service",discoveryProtocol="crafting_center.discovery.v1"}
 function T.load(root)
  local path=fs.combine(root,"fluid_network.txt")
  if fs.exists(path..".pending") then path=path..".pending" end
- if not fs.exists(path) then return {role="standalone",monitors={},sources={},destinations={},clients={},basins={},gearSources={},gearMinimumDefault=10000,gearMinimums={},castingFluidTankCapacity=55300000} end
+ if not fs.exists(path) then return {role="standalone",monitors={},sources={},destinations={},clients={},basins={},gearSources={},gearMinimumDefault=10000,gearMinimums={},castingFluidTankCapacity=55300000,autoMinimumBlocks=64} end
  local f=assert(fs.open(path,"r"));local c=textutils.unserialize(f.readAll());f.close()
  assert(type(c)=="table" and (c.role=="gear" or c.role=="fluid" or c.role=="standalone"),"Invalid fluid_network.txt; use Network Setup")
  for _,k in ipairs({"monitors","sources","destinations","clients","basins","gearSources"}) do c[k]=c[k] or {};assert(type(c[k])=="table","Invalid network "..k) end
  c.castingFluidTankCapacity=c.castingFluidTankCapacity or 55300000
  assert(type(c.castingFluidTankCapacity)=="number" and c.castingFluidTankCapacity>0 and c.castingFluidTankCapacity<=1000000000 and c.castingFluidTankCapacity==math.floor(c.castingFluidTankCapacity),"Invalid Casting Fluid Tank capacity")
+ c.autoMinimumBlocks=c.autoMinimumBlocks or 64
+ assert(type(c.autoMinimumBlocks)=="number" and c.autoMinimumBlocks>=1 and c.autoMinimumBlocks<=1000000000 and c.autoMinimumBlocks==math.floor(c.autoMinimumBlocks),"Invalid automatic minimum batch size")
  c.assignmentExchange=true
  c.gearMinimumDefault=c.gearMinimumDefault==nil and 10000 or c.gearMinimumDefault
  c.gearMinimums=c.gearMinimums or {}

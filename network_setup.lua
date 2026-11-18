@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.5.1","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
+-- @crafting-center {"version":"1.5.2","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -107,7 +107,7 @@ end
 local function input(key,label)
  term.setCursorPos(1,select(2,term.getSize()));term.clearLine();write(label..": ")
  local answer=read();local n=tonumber(answer)
- if n and n>=0 and n<=1000000000 and n==math.floor(n) and (key~="castingFluidTankCapacity" or n>0) then
+ if n and n>=0 and n<=1000000000 and n==math.floor(n) and ((key~="castingFluidTankCapacity" and key~="autoMinimumBlocks") or n>0) then
   if key=="client" then c.clients={n} else c[key]=n end
   message="Value saved in draft; select Save to apply"
  else message="Enter a whole number from 0 to 1,000,000,000" end
@@ -227,6 +227,7 @@ local function entries()
   add("Managed block basins: "..#c.basins,function() choose("basins","basin",true) end,"basins")
   add("Casting Fluid Tank: "..tostring(c.castingFluidTank or "unset"),function() choose("castingFluidTank","fluid",false) end,"castingFluidTank")
   add("Casting tank capacity: "..c.castingFluidTankCapacity.." mB",function() input("castingFluidTankCapacity","Tank capacity (mB, positive)") end)
+  add("Auto minimum batch: "..c.autoMinimumBlocks.." blocks",function() input("autoMinimumBlocks","Minimum auto blocks (positive)") end)
   add("Block output chest: "..tostring(c.blockOutputChest or "unset"),function() choose("blockOutputChest","inventory",false) end,"blockOutputChest")
   add("Extra reserve for monitor casting: "..c.keepMb.." mB",function() input("keepMb","Additional fluid reserve per material (mB)") end)
   add("Disable local block casting",function() c.basins={};c.blockOutputChest=nil;c.outputs=nil;message="Basins cleared; fluid service remains available" end)
