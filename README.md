@@ -298,7 +298,7 @@ any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
 
-## Shared fluid network (Gear UI 1.1.0 / Liquid Resource Monitor 1.1.0)
+## Shared fluid network (Gear UI 1.1.0 / Liquid Resource Monitor 1.2.0)
 
 The two computers share a wired modem network. Liquid Resource Monitor owns the
 Functional Storage fluid supply and serializes transfers. Gear UI requests exact
@@ -314,7 +314,9 @@ and collects it into a dedicated output chest.
 2. Open **Fluid Network Setup** from Control Center's Console Scripts on both
    computers. The header shows the current computer ID. Select the local wired modem.
 3. On the fluid computer choose role **fluid**, assign only its monitors and
-   Functional Storage fluid controllers/drawers, and enter **Gear: Computer ID**.
+   **Main fluid storage sources**, and enter **Gear: Computer ID**. Assign the
+   second controller/drawer bank under **Gear-only fluid storage**. Both selectors
+   accept Functional Storage fluid devices. Default Gear minimum is 10,000 mB.
    Select the allowed Gear destinations: Gear's basin and assigned casting tables
    (current reserved range: casting_0 through casting_42, including the manual
    test station). Use **Apply ranges: Gear 0-42 / Basins 43-105** to fill both lists.
@@ -385,3 +387,27 @@ The adapter also serves Gear's bounded recovery and manual Casting Test.
 The Fluid Monitor uses welcome/home navigation, cached mirrored displays,
 alphabetic stock with quantities, review/queue controls, progress and a muted version
 footer. Its block completion indicator now means a verified block was collected.
+
+### Dedicated Gear storage and minimum stock
+
+Once **Gear-only fluid storage** is assigned, Gear UI sees and consumes only that
+pool. Whole-block basins use only **Main fluid storage sources**. Automatic refills
+flow main -> Gear before block pours and during regular storage polling.
+
+The default target is **10,000 mB per molten fluid** seen in either pool. Open
+**Gear Stock / Minimums** on the Fluid Monitor to view actual Gear stock and set an
+individual target. Choose **Use default** to inherit the configured default, or
+**Minimum 0** to disable a fluid's standing reserve. Saved targets take effect
+without restarting the monitor. An explicit target remains listed even if that
+fluid disappears from storage. Queued Gear demand can raise the refill goal above
+its minimum; lower targets never pump existing Gear fluid back into main storage.
+
+Main storage preserves any unfilled Gear minimum/demand when a Gear drawer rejects
+fluid or lacks capacity. The extra block-casting reserve remains additional.
+Partial refills use measured mB; subsequent polls recompute only the deficit.
+The service journal also tracks refill receipts, protecting restart recovery.
+
+On the fluid computer, assign the second store in Network Setup, save, and restart
+Liquid Resource Monitor to activate the new source pool. These must be separate
+underlying drawer banks, not aliases or two controllers linked to the same drawers.
+Without a Gear-only source assignment the earlier shared-store behavior remains.

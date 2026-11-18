@@ -5,6 +5,27 @@ internal development labels have been consolidated into the entries below;
 1.1.0 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Liquid Resource Monitor / Network Setup / Fluid Service 1.2.0 - Gear-only fluid reserve
+
+Date: 2026-11-17
+
+- Added a separate Functional Storage source pool exclusively for Gear requests.
+  Managed block basins continue using main storage; Gear pours never fall back to
+  main storage when a dedicated Gear pool is configured.
+- Automatically refill main -> Gear before block casting. Default minimum is
+  10,000 mB per discovered molten fluid, with persistent per-fluid overrides.
+  Queued Gear demand larger than the minimum raises that fluid's refill goal.
+- Added Gear Stock / Minimums to the Fluid Monitor, including current stock,
+  minimum targets, individual adjustments, default reset, and a zero-minimum option.
+- Missing Gear stock is protected in main storage if a refill is blocked. Known
+  partial refills use measured amounts; persistent receipt IDs remain replay-safe.
+- Network Setup assigns separate main/Gear source lists and the default minimum,
+  rejecting overlapping controllers and other destination/source conflicts.
+- Existing shared-store installations retain their behavior until Gear-only
+  sources are configured. Network Settings schema is now 1.2.0.
+- Local tests cover pool isolation, refill priority, minimum overrides, blocked
+  capacity, queue demand, partial/restarted refills and the on-monitor editor.
+
 ## Network Setup 1.1.3 - Apply casting station ranges
 
 - Added a one-click draft assignment for the current physical layout: Gear

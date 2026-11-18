@@ -1,5 +1,5 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
-local VERSION="1.1.0"
+-- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
+local VERSION="1.2.0"
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -8,7 +8,7 @@ N.open(c)
 local service=dofile(fs.combine(ROOT,"fluid_service.lua"))(ROOT,c)
 local blockRules=dofile(fs.combine(ROOT,"basin_casting_data.lua"))
 local basins=dofile(fs.combine(ROOT,"basin_casting.lua"))(c,service)
-local S={screen="welcome",page=1,quantity=1,shape="Block",message="",stock={},lastTouch=os.clock()}
+local S={screen="welcome",page=1,quantity=1,shape="Block",message="",stock={},gearStock={},lastTouch=os.clock()}
 local displays,W,H={},math.huge,math.huge
 local palette={[colors.black]=0x101820,[colors.blue]=0x25394D,[colors.gray]=0x334155,[colors.lightGray]=0xAAB8C5,[colors.cyan]=0x176B80,[colors.green]=0x265F4B,[colors.red]=0x8B3545,[colors.white]=0xF0F5FA}
 local function loadState(name,default)
@@ -84,6 +84,12 @@ local function resolveBasins(mode)
  Q.paused=false;Q.reason=nil;saveQueue();os.queueEvent("fluid_queue_changed")
  navigate("utilities")
 end
+local function saveMinimum()
+ local latest=N.load(ROOT)
+ if S.minimumInherited then latest.gearMinimums[S.fluid]=nil else latest.gearMinimums[S.fluid]=S.minimum end
+ N.save(ROOT,latest);c.gearMinimums=latest.gearMinimums
+ os.queueEvent("fluid_refresh");navigate("gearStock");S.message="Gear minimum saved"
+end
 local function render()
  for _,d in ipairs(displays) do
   local breath=(1-math.cos(os.clock()*math.pi/3))/2
@@ -114,14 +120,14 @@ local function render()
    text(1,math.floor(d.h/2)+1,d.w,"Right click to begin",colors.black,colors.lightGray,true)
    buttons[1]={x=1,y=1,w=d.w,h=d.h,action=function() navigate("main") end}
   else
-   local problem=Q.paused or service.fault or S.stockError
+   local problem=Q.paused or service.fault or S.stockError or S.gearError or S.refillError
    local frame=problem and colors.red or colors.blue
    line(1,"LIQUID RESOURCE MONITOR",frame)
    line(2,"Computer "..os.getComputerID().." | "..S.screen,nil,colors.lightGray)
    text(ox+1,d.h,W,"",frame)
    text(ox+W-#VERSION-1,d.h,#VERSION+1,"v"..VERSION,frame,colors.gray)
    if S.screen~="main" then
-    button(1,3,half,"<< Back",function() navigate(S.screen=="review" and "material" or S.screen=="material" and "resources" or "main") end,colors.gray)
+    button(1,3,half,"<< Back",function() navigate(S.screen=="review" and "material" or S.screen=="material" and "resources" or S.screen=="gearMinimum" and "gearStock" or "main") end,colors.gray)
     button(right,3,half,"Home",function() navigate("main") end)
    end
    if S.screen=="main" then
@@ -130,25 +136,45 @@ local function render()
     button(x,7,width,"Resources",function() navigate("resources") end,colors.cyan)
     button(x,10,width,"Queue ("..#Q.jobs..")",function() navigate("queue") end)
     button(x,13,width,"Automatic Casting",function() navigate("automatic") end)
+    button(x,16,width,"Gear Stock / Minimums",function() navigate("gearStock") end)
     button(x,H-2,width,"Utilities",function() navigate("utilities") end,colors.gray)
-   elseif S.screen=="resources" or S.screen=="automatic" then
-    local size=math.max(1,math.floor((H-14)/3));local pages=math.max(1,math.ceil(#S.stock/size));S.page=math.max(1,math.min(S.page,pages))
-    line(6,S.screen=="automatic" and "Toggle automatic 64-block batches" or "Select a fluid",colors.blue)
-    if #S.stock==0 then line(9,S.stockError and "Storage unavailable" or "No fluids in assigned storage",nil,colors.lightGray) end
+   elseif S.screen=="resources" or S.screen=="automatic" or S.screen=="gearStock" then
+    local listing=S.screen=="gearStock" and S.gearStock or S.stock
+    local size=math.max(1,math.floor((H-14)/3));local pages=math.max(1,math.ceil(#listing/size));S.page=math.max(1,math.min(S.page,pages))
+    line(6,S.screen=="gearStock" and "Gear-only stock / minimums" or S.screen=="automatic" and "Toggle automatic 64-block batches" or "Select a fluid",colors.blue)
+    if #listing==0 then line(9,S.screen=="gearStock" and (service.hasGearStore() and "Gear stock unavailable or no molten fluids found" or "Assign Gear-only storage in Network Setup") or S.stockError and "Storage unavailable" or "No fluids in assigned storage",nil,colors.lightGray) end
     for i=1,size do
-     local fluid=S.stock[(S.page-1)*size+i]
+     local fluid=listing[(S.page-1)*size+i]
      if fluid then
       local label=N.label(fluid.name).." ("..format(fluid.amount)..")"
+      if S.screen=="gearStock" then label=N.label(fluid.name)..": "..format(fluid.amount).." / Min "..format(fluid.minimum) end
       if S.screen=="automatic" then label=(auto[fluid.name] and "[ON] " or "[OFF] ")..label end
       button(1,8+(i-1)*3,W,label,function()
-       if S.screen=="automatic" then assert(blockRules[fluid.name],"No verified whole-block recipe for this fluid");auto[fluid.name]=not auto[fluid.name];saveState("fluid_auto.txt",auto)
+       if S.screen=="gearStock" then
+        S.fluid=fluid.name;S.minimum=fluid.minimum;S.minimumInherited=(c.gearMinimums or {})[fluid.name]==nil;navigate("gearMinimum")
+       elseif S.screen=="automatic" then assert(blockRules[fluid.name],"No verified whole-block recipe for this fluid");auto[fluid.name]=not auto[fluid.name];saveState("fluid_auto.txt",auto)
        else S.fluid=fluid.name;S.quantity=1;navigate("material") end
-      end,auto[fluid.name] and S.screen=="automatic" and colors.green or colors.blue)
+      end,S.screen=="gearStock" and ((fluid.deficit or 0)>0 and colors.red or colors.green) or auto[fluid.name] and S.screen=="automatic" and colors.green or colors.blue)
      end
     end
     if pages>1 then line(H-6,"Page: "..S.page.." / "..pages,nil,colors.lightGray) end
     button(1,H-4,half,"Previous",S.page>1 and function() S.page=S.page-1 end or nil)
     button(right,H-4,half,"Next",S.page<pages and function() S.page=S.page+1 end or nil)
+    if S.screen=="gearStock" then line(H-1,S.refillError or service.refillStatus or "Gear minimums are maintained automatically",nil,colors.lightGray) end
+   elseif S.screen=="gearMinimum" then
+    line(6,N.label(S.fluid),colors.blue)
+    local amount=0;for _,row in ipairs(S.gearStock) do if row.name==S.fluid then amount=row.amount end end
+    line(9,"Gear stock: "..format(amount),nil,colors.lightGray)
+    line(11,"Default minimum: "..format(c.gearMinimumDefault),nil,colors.lightGray)
+    line(13,"Queued Gear demand: "..format(service.reserved(S.fluid)),nil,colors.lightGray)
+    button(1,15,half,"Use default",function() S.minimum=c.gearMinimumDefault;S.minimumInherited=true end,colors.gray)
+    button(right,15,half,"Minimum 0",function() S.minimum=0;S.minimumInherited=false end,colors.gray)
+    line(18,"Minimum: "..format(S.minimum)..(S.minimumInherited and " (default)" or ""),colors.cyan)
+    local deltas={-10000,-1000,1000,10000};local labels={"-10 B","-1 B","+1 B","+10 B"};local unit=math.floor(W/4)
+    for i,delta in ipairs(deltas) do
+     button(1+(i-1)*unit,H-9,i==4 and W-3*unit or unit,labels[i],function() S.minimum=math.max(0,math.min(1000000000,S.minimum+delta));S.minimumInherited=false end)
+    end
+    button(1,H-3,W,"Save minimum",saveMinimum,colors.cyan)
    elseif S.screen=="material" or S.screen=="review" then
     line(6,N.label(S.fluid),colors.blue)
     line(9,"Available: "..format(selectedStock()),nil,colors.lightGray)
@@ -194,6 +220,7 @@ local function render()
      line(13,N.label(problems[1].fluid).." requested "..format(problems[1].amount),nil,colors.lightGray)
     end
     line(15,"Gear holds protected | Managed basins: "..#(c.basins or {}),nil,colors.lightGray)
+    line(17,S.refillError or service.refillStatus or (service.hasGearStore() and "Gear-only storage enabled" or "Shared storage mode"),nil,colors.lightGray)
     button(1,H-7,W,"Inspect Complete / Acknowledge",(#problems>0 or service.fault or Q.paused) and function() navigate("acknowledge") end or nil,colors.gray)
     button(1,H-3,W,"Refresh Storage",function() os.queueEvent("fluid_refresh") end)
    elseif S.screen=="acknowledge" then
@@ -251,6 +278,11 @@ local function queueWorker()
 end
 local function stockWorker()
  while true do
+  local refilled,refillError=pcall(service.refill)
+  S.refillError=not refilled and tostring(refillError) or nil
+  local gearOk,gearRows=pcall(service.gearStatus)
+  S.gearStock=gearOk and gearRows or {};S.gearError=not gearOk and tostring(gearRows) or nil
+  table.sort(S.gearStock,function(a,b) return N.label(a.name)<N.label(b.name) end)
   local ok,stock=pcall(service.stock)
   S.stock=ok and stock or {};S.stockError=not ok and tostring(stock) or nil
   table.sort(S.stock,function(a,b) return N.label(a.name)<N.label(b.name) end)
@@ -260,7 +292,7 @@ local function stockWorker()
    for _,fluid in ipairs(S.stock) do
     local rule=blockRules[fluid.name]
     local amount=rule and rule.amount
-    if amount and auto[fluid.name] and #(c.basins or {})>0 and c.blockOutputChest and fluid.amount-service.reserved(fluid.name)-(c.keepMb or 0)>=amount*64 then
+    if amount and auto[fluid.name] and #(c.basins or {})>0 and c.blockOutputChest and service.blockAvailable(fluid.name,fluid.amount)>=amount*64 then
      enqueue(fluid.name,"Block",64,true);break
     end
    end

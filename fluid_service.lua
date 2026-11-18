@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
+-- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
 return function(root,c)
  local T={busy=false,holds={},last="Ready"}
  local path=fs.combine(root,"fluid_transfers.txt")
@@ -12,10 +12,11 @@ return function(root,c)
  state.highwater=state.highwater or {}
  local function sequence(sender,id,localRequest)
   local owner,major,minor
-  if localRequest then owner,major,minor=id:match("^monitor:(%d+):(%d+):(%d+)$")
+  if localRequest=="refill" then owner,major,minor=id:match("^refill:(%d+):(%d+):(%d+)$")
+  elseif localRequest then owner,major,minor=id:match("^monitor:(%d+):(%d+):(%d+)$")
   else owner,major,minor=id:match("^(%d+):(%d+):(%d+)$") end
   assert(tonumber(owner)==sender and major and minor,"Invalid transfer request identity")
-  return tostring(sender)..(localRequest and ":monitor" or ":gear"),tonumber(major),tonumber(minor)
+  return tostring(sender)..(localRequest=="refill" and ":refill" or localRequest and ":monitor" or ":gear"),tonumber(major),tonumber(minor)
  end
  local function save()
   local f=assert(fs.open(path..".pending","w"));f.write(textutils.serialize(state));f.close()
@@ -30,17 +31,23 @@ return function(root,c)
  end
  local sources={}
  for _,name in ipairs(c.sources or {}) do assert(not sources[name],"Duplicate fluid source");sources[name]=true end
+ local gearSources={}
+ for _,name in ipairs(c.gearSources or {}) do
+  assert(not sources[name] and not gearSources[name],"Gear-only storage must be separate from main storage and listed once: "..name)
+  gearSources[name]=true
+ end
+ local dedicated=next(gearSources)~=nil
  local targets={}
- for _,name in ipairs(c.destinations or {}) do targets[name]=true end
+ for _,name in ipairs(c.destinations or {}) do assert(not sources[name] and not gearSources[name],"Gear station overlaps fluid storage: "..name);targets[name]=true end
  for _,name in ipairs(c.basins or {}) do
-  assert(not targets[name] and not sources[name],"Managed basins must be separate from Gear tables/storage and listed once")
+  assert(not targets[name] and not sources[name] and not gearSources[name],"Managed basins must be separate from Gear tables/storage and listed once")
   targets[name]="local"
  end
- if c.blockOutputChest then assert(not targets[c.blockOutputChest] and not sources[c.blockOutputChest],"Block output chest overlaps a fluid source or casting destination") end
- function T.stock()
-  assert(next(sources),"No fluid storage assigned in Network Setup")
+ if c.blockOutputChest then assert(not targets[c.blockOutputChest] and not sources[c.blockOutputChest] and not gearSources[c.blockOutputChest],"Block output chest overlaps a fluid source or casting destination") end
+ local function readStock(pool)
+  assert(next(pool),"No fluid storage assigned in Network Setup")
   local totals={}
-  for source in pairs(sources) do
+  for source in pairs(pool) do
    for _,tank in pairs(peripheral.call(source,"tanks")) do
     if tank.name and (tank.amount or 0)>0 then totals[tank.name]=(totals[tank.name] or 0)+tank.amount end
    end
@@ -49,6 +56,37 @@ return function(root,c)
   for fluid,amount in pairs(totals) do rows[#rows+1]={name=fluid,amount=amount} end
   table.sort(rows,function(a,b) return a.name<b.name end)
   return rows
+ end
+ function T.stock() return readStock(sources) end
+ function T.gearStock() return readStock(dedicated and gearSources or sources) end
+ function T.hasGearStore() return dedicated end
+ function T.minimum(fluid)
+  local value=(c.gearMinimums or {})[fluid]
+  return value~=nil and value or (c.gearMinimumDefault==nil and 10000 or c.gearMinimumDefault)
+ end
+ function T.gearStatus()
+  if not dedicated then return {} end
+  local rows={}
+  local function add(fluid)
+   if fluid:find(":molten_",1,true) then rows[fluid]=rows[fluid] or {name=fluid,amount=0,main=0} end
+  end
+  for _,tank in ipairs(T.stock()) do add(tank.name);if rows[tank.name] then rows[tank.name].main=tank.amount end end
+  for _,tank in ipairs(T.gearStock()) do add(tank.name);if rows[tank.name] then rows[tank.name].amount=tank.amount end end
+  for fluid in pairs(c.gearMinimums or {}) do add(fluid) end
+  local result={}
+  for fluid,row in pairs(rows) do
+   row.minimum=T.minimum(fluid);row.goal=math.max(row.minimum,T.reserved(fluid));row.deficit=math.max(0,row.goal-row.amount)
+   result[#result+1]=row
+  end
+  table.sort(result,function(a,b) return a.name<b.name end);return result
+ end
+ function T.blockAvailable(fluid,mainAmount)
+  local protected=T.reserved(fluid)
+  if dedicated then
+   local amount=0;for _,tank in ipairs(T.gearStock()) do if tank.name==fluid then amount=tank.amount end end
+   protected=math.max(0,math.max(T.minimum(fluid),protected)-amount)
+  end
+  return math.max(0,mainAmount-protected-(c.keepMb or 0))
  end
  function T.uncertain()
   local result={}
@@ -75,8 +113,10 @@ return function(root,c)
  function T.transfer(sender,id,args,localRequest)
   assert(type(id)=="string" and #id<=160 and type(args)=="table","Invalid transfer request")
   assert(type(args.target)=="string" and type(args.fluid)=="string" and integer(args.amount) and args.amount>0 and args.amount<=1000000,"Invalid fluid, destination or amount")
-  assert(not sources[args.target],"Cannot send fluid back into a configured source")
-  assert(localRequest and targets[args.target]=="local" or not localRequest and targets[args.target]==true,"Destination is not assigned to this application")
+  local refill=localRequest=="refill"
+  assert(not sources[args.target],"Cannot send fluid back into main storage")
+  assert(refill and gearSources[args.target] or localRequest==true and targets[args.target]=="local" or not localRequest and targets[args.target]==true,"Destination is not assigned to this application")
+  if localRequest==true then T.refill(args.fluid) end
   local key=tostring(sender).."|"..id
   local previous=state.records[key]
   if previous then
@@ -87,26 +127,31 @@ return function(root,c)
   local family,major,minor=sequence(sender,id,localRequest)
   local watermark=state.highwater[family]
   assert(not watermark or major>watermark.major or major==watermark.major and minor>watermark.minor,"Receipt expired or request is older than a completed transfer; inspect destination instead of resending")
-  assert(not T.busy,"Fluid service busy; retry after the current transfer")
+  local waitUntil=os.clock()+5
+  while T.busy do
+   assert(os.clock()<waitUntil,"Fluid service busy; retry after the current transfer")
+   sleep(.05)
+  end
   assert(not T.fault,T.fault)
   assert(#T.uncertain()==0,"Uncertain fluid transfer; inspect the Fluid Monitor Utilities report")
-  if localRequest then local ready,reason=T.readyForLocal();assert(ready,reason) end
+  if localRequest==true then local ready,reason=T.readyForLocal();assert(ready,reason) end
   T.busy=true
   local started=false
   local ok,result=pcall(function()
+   local pool=not localRequest and dedicated and gearSources or sources
    local available=0
-   for _,tank in ipairs(T.stock()) do if tank.name==args.fluid then available=tank.amount end end
-   if localRequest then available=math.max(0,available-T.reserved(args.fluid)-(c.keepMb or 0)) end
+   for _,tank in ipairs(readStock(pool)) do if tank.name==args.fluid then available=tank.amount end end
+   if localRequest==true then available=T.blockAvailable(args.fluid,available) end
    assert(available>=args.amount,"Not Enough Fluid: need "..args.amount.." mB of "..args.fluid.."; Gear reservations are protected")
    while #state.order>=64 do
     local oldest=table.remove(state.order,1);state.records[oldest]=nil
    end
-   local entry={target=args.target,fluid=args.fluid,amount=args.amount,moved=0,status="started"}
+   local entry={target=args.target,fluid=args.fluid,amount=args.amount,moved=0,status="started",pool=refill and "refill" or localRequest and "main" or dedicated and "gear" or "main"}
    state.records[key]=entry;state.order[#state.order+1]=key
    state.highwater[family]={major=major,minor=minor};started=true;save()
    T.progress={moved=0,requested=args.amount,target=args.target,at=os.clock()}
    os.queueEvent("fluid_status")
-   for source in pairs(sources) do
+   for source in pairs(pool) do
     if entry.moved>=args.amount then break end
     local count=peripheral.call(source,"pushFluid",args.target,args.amount-entry.moved,args.fluid)
     assert(integer(count) and count<=args.amount-entry.moved,"Uncertain fluid transfer result")
@@ -128,6 +173,31 @@ return function(root,c)
   end
   return result
  end
+ function T.refill(filter)
+  if not dedicated or T.busy or T.refilling or T.fault or #T.uncertain()>0 then return 0 end
+  T.refilling=true
+  local ok,result=pcall(function()
+  local total=0;local blocked
+  for _,row in ipairs(T.gearStatus()) do
+   if (not filter or row.name==filter) and row.deficit>0 and row.main>0 then
+    local need=math.min(row.deficit,row.main)
+    for _,target in ipairs(c.gearSources) do
+     if need<=0 then break end
+     state.refillSeq=(state.refillSeq or 0)+1
+     local result=T.transfer(os.getComputerID(),"refill:"..os.getComputerID()..":"..state.refillSeq..":1",{target=target,fluid=row.name,amount=math.min(1000000,need)},"refill")
+     need=need-result.moved;total=total+result.moved
+     sleep(0) -- Let waiting Gear requests run between refill pours.
+    end
+    if need>0 then blocked="Gear refill blocked: "..row.name.." ("..need.." mB short); check Gear storage filters/capacity" end
+   end
+  end
+  T.refillStatus=blocked or (total>0 and ("Refilled Gear storage: "..total.." mB") or "Gear stock checked")
+  return total
+  end)
+  T.refilling=false
+  if not ok then error(result,0) end
+  return result
+ end
  function T.handle(sender,message)
   assert(type(message)=="table" and message.version==1 and type(message.id)=="string","Invalid service message")
   assert(knownClient(sender),"Gear computer is not assigned in Network Setup")
@@ -135,7 +205,7 @@ return function(root,c)
    local outputs={};for i,name in ipairs(c.basins or {}) do outputs["Basin"..i]=name end
    return {monitors=c.monitors or {},outputs=outputs,basins=c.basins or {},computerId=os.getComputerID()}
   end
-  if message.method=="stock" then return T.stock() end
+  if message.method=="stock" then return T.gearStock() end
   if message.method=="reserve" then
    local demand=message.args and message.args.demand;assert(type(demand)=="table","Invalid queue reservation")
    local clean={};local count=0

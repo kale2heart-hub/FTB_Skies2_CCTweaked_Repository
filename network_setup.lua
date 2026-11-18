@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.1.3","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
+-- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -37,13 +37,16 @@ local function choose(key,kind,multi)
   if kind=="modem" and has({"left","right","top","bottom","front","back"},name) and peripheral.hasType(name,"modem") then
    local ok,wireless=pcall(peripheral.call,name,"isWireless");valid=ok and wireless==false
   end
-  if key=="sources" then valid=isStorageSource(name,m) end
+  if key=="sources" or key=="gearSources" then
+   local other=key=="sources" and c.gearSources or c.sources
+   valid=isStorageSource(name,m) and (not has(other,name) or has(c[key],name))
+  end
   if key=="basins" or key=="destinations" then
    local casting=m.tanks and m.list and m.pushItems and
     (name:match("^productivemetalworks:casting_")~=nil or peripheral.hasType(name,"productivemetalworks:casting"))
    local other=key=="basins" and c.destinations or c.basins
    -- Keep existing conflicts visible so they can be deselected, never silently reassigned.
-   valid=casting and ((not has(other,name) and not has(c.sources,name)) or has(c[key],name))
+   valid=casting and ((not has(other,name) and not has(c.sources,name) and not has(c.gearSources,name)) or has(c[key],name))
   elseif key=="blockOutputChest" then valid=m.list and m.size and m.pushItems and not m.tanks end
   if valid then choices[#choices+1]=name end
  end
@@ -55,10 +58,10 @@ end
 local function input(key,label)
  term.setCursorPos(1,select(2,term.getSize()));term.clearLine();write(label..": ")
  local answer=read();local n=tonumber(answer)
- if n and n>=0 and n==math.floor(n) then
+ if n and n>=0 and n<=1000000000 and n==math.floor(n) then
   if key=="client" then c.clients={n} else c[key]=n end
   message="Value saved in draft; select Save to apply"
- else message="Enter a non-negative whole number" end
+ else message="Enter a whole number from 0 to 1,000,000,000" end
 end
 local function save()
  assert(c.role=="gear" or c.role=="fluid","Choose Gear computer or Fluid Monitor computer")
@@ -73,6 +76,9 @@ local function save()
   for _,name in ipairs(c.sources) do
    assert(isStorageSource(name,methods(name)),"Source must be a connected Functional Storage fluid device: "..name..". Clear source selections and reselect if needed.")
   end
+  for _,name in ipairs(c.gearSources) do
+   assert(isStorageSource(name,methods(name)),"Gear-only source must be a connected Functional Storage fluid device: "..name)
+  end
   assert(#c.clients>0 and c.clients[1]~=os.getComputerID(),"Set the Gear computer ID")
   assert(#c.destinations>0,"Allow the Gear casting destinations")
   local reserved={}
@@ -83,7 +89,8 @@ local function save()
    end
    reserved[name]=owner
   end
-  for _,name in ipairs(c.sources) do reserve(name,"a fluid storage source") end
+  for _,name in ipairs(c.sources) do reserve(name,"a main fluid storage source") end
+  for _,name in ipairs(c.gearSources) do reserve(name,"a Gear-only fluid storage source") end
   for _,name in ipairs(c.destinations) do reserve(name,"a Gear casting destination") end
   for _,name in ipairs(c.basins) do
    reserve(name,"a managed block basin")
@@ -101,11 +108,12 @@ end
 local function entries()
  if view=="choose" then
   local rows={}
-  if field=="sources" then rows[1]={label="Clear source selections",action=function() c.sources={} end}
+  if field=="sources" or field=="gearSources" then rows[1]={label="Clear source selections",action=function() c[field]={} end}
   elseif field=="basins" then rows[1]={label="Clear managed basin selections",action=function() c.basins={} end} end
   for _,name in ipairs(choices) do
    local current=value(field);local active=multiple and has(current or {},name) or current==name
-   local conflict=(field=="basins" and has(c.destinations,name)) or (field=="destinations" and has(c.basins,name))
+   local conflict=(field=="basins" and has(c.destinations,name)) or (field=="destinations" and has(c.basins,name)) or
+    (field=="sources" and has(c.gearSources,name)) or (field=="gearSources" and has(c.sources,name))
    rows[#rows+1]={label=(active and "[x] " or "[ ] ")..name..(conflict and " [CONFLICT]" or ""),action=function()
     if multiple then
      if conflict and not has(c[field],name) then message="Device belongs to the other system; remove that assignment first";return end
@@ -121,7 +129,9 @@ local function entries()
   {label="Assigned monitors: "..#c.monitors,action=function() choose("monitors","monitor",true) end},
   {label="Fluid: Computer ID: "..tostring(c.serverId or "unset"),action=function() input("serverId","Fluid: Computer ID") end},
   {label="Gear: Computer ID: "..tostring(c.clients[1] or "unset"),action=function() input("client","Gear: Computer ID") end},
-  {label="Functional Storage sources: "..#c.sources,action=function() choose("sources","fluid",true) end},
+  {label="Main fluid storage sources: "..#c.sources,action=function() choose("sources","fluid",true) end},
+  {label="Gear-only fluid storage: "..#c.gearSources,action=function() choose("gearSources","fluid",true) end},
+  {label="Default Gear minimum: "..c.gearMinimumDefault.." mB",action=function() input("gearMinimumDefault","Minimum per fluid (mB)") end},
   {label="Allowed Gear casting destinations: "..#c.destinations,action=function() choose("destinations","fluid",true) end},
   {label="Managed block basins: "..#c.basins,action=function() choose("basins","basin",true) end},
   {label="Block output chest: "..tostring(c.blockOutputChest or "unset"),action=function() choose("blockOutputChest","inventory",false) end},

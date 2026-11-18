@@ -112,7 +112,7 @@ l.execute(r'''
 print('PASS client: pinned server/request matching, separate monitors/stations, stock/reservation/pour RPC and timeout without duplicate resend')
 
 monitor=(R/'fluid_monitor.lua').read_text()
-l.globals().appSource=monitor[:monitor.rindex('connect();render()')]+"\nreturn {S=S,Q=Q,service=service,connect=connect,render=render,enqueue=enqueue,worker=queueWorker,stockWorker=stockWorker,cancel=cancelJob}"
+l.globals().appSource=monitor[:monitor.rindex('connect();render()')]+"\nreturn {S=S,Q=Q,service=service,connect=connect,render=render,enqueue=enqueue,worker=queueWorker,stockWorker=stockWorker,cancel=cancelJob,saveMinimum=saveMinimum}"
 l.execute(r"""
  os.getComputerID=function() return 20 end
  os.epoch=function() return now*1000 end
@@ -155,8 +155,8 @@ l.execute(r"""
   end
   return originalCall(name,method,...)
  end
- App=assert(load(appSource))();App.connect();App.S.fluid='productivemetalworks:molten_iron';App.S.stock={{name=App.S.fluid,amount=10000}}
- for _,screen in ipairs({'welcome','main','resources','automatic','material','review','queue','utilities','acknowledge'}) do App.S.screen=screen;App.render() end
+ App=assert(load(appSource))();App.connect();App.S.fluid='productivemetalworks:molten_iron';App.S.minimum=10000;App.S.stock={{name=App.S.fluid,amount=10000}}
+ for _,screen in ipairs({'welcome','main','resources','automatic','material','review','queue','utilities','acknowledge','gearStock','gearMinimum'}) do App.S.screen=screen;App.render() end
  App.S.screen='main';App.render();local beforeWrites=writes;App.render();assert(writes==beforeWrites)
  App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
  assert(not pcall(App.enqueue,App.S.fluid,'Ingot',1,false))
@@ -240,7 +240,7 @@ l.execute(r"""
  files['root/fluid_network.txt']=textutils.serialize(nc)
  os.getComputerID=function() return 10 end
  keys={q=1,b=2,backspace=3,up=4,down=5,pageUp=6,pageDown=7,enter=8,r=9}
- local input={};for i=1,12 do input[#input+1]={'key',keys.down} end
+ local input={};for i=1,14 do input[#input+1]={'key',keys.down} end
  input[#input+1]={'key',keys.enter};input[#input+1]={'key',keys.q}
  os.pullEvent=function() local event=table.remove(input,1);assert(event,'Console loop did not exit');return table.unpack(event) end
  term={getSize=function() return 60,22 end,setCursorPos=function(x,y) assert(x>=1 and x<=60 and y>=1 and y<=22) end,
@@ -288,7 +288,7 @@ l.execute(r"""
  local picker=assert(load(sourcePicker))();picker.choose('basins','basin',true)
  local rows=picker.entries();assert(#rows==2 and rows[2].label=='[ ] productivemetalworks:casting_42');rows[2].action()
  picker.choose('blockOutputChest','inventory',false);rows=picker.entries();assert(#rows==1 and rows[1].label=='[ ] sophisticatedstorage:chest_9');rows[1].action()
- rows=picker.entries();rows[13].action()
+ rows=picker.entries();rows[15].action()
  local saved=textutils.unserialize(files['root/fluid_network.txt']);assert(saved.basins[1]=='productivemetalworks:casting_42' and saved.blockOutputChest=='sophisticatedstorage:chest_9' and saved.outputs==nil)
 """)
 print('PASS managed-basin setup: Gear destinations excluded, multiple-basin selection, inventory-only output chest and saved basin-only assignments')
@@ -313,7 +313,7 @@ l.execute(r"""
  local picker=assert(load(orderedPicker))();picker.choose('basins','basin',true)
  local rows=picker.entries();assert(rows[2].label:find('[CONFLICT]',1,true));rows[2].action()
  picker.choose('blockOutputChest','inventory',false);rows=picker.entries();rows[1].action()
- rows=picker.entries();rows[12].action();rows[13].action()
+ rows=picker.entries();rows[14].action();rows[15].action()
  local saved=textutils.unserialize(files['root/fluid_network.txt'])
  assert(#saved.destinations==43 and #saved.basins==63)
  assert(saved.destinations[1]=='productivemetalworks:casting_0' and saved.destinations[43]=='productivemetalworks:casting_42')
@@ -322,6 +322,87 @@ l.execute(r"""
  assert(saved.blockOutputChest=='sophisticatedstorage:chest_9')
 """)
 print('PASS existing conflicts can be deselected; exact Gear 0-42 / basin 43-105 plan saves without overlaps and preserves output assignment')
+
+l.execute(r"""
+ -- Dedicated Gear storage is a distinct pool: only refills flow main -> Gear.
+ local iron='productivemetalworks:molten_iron';local diamond='productivemetalworks:molten_diamond'
+ local pools={main_store={[iron]=30000,[diamond]=9000},gear_store={[iron]=2000,[diamond]=1000},gear_table={},block_basin={}}
+ local moves={};local rejectGear=false;local fillLimit=1000000
+ sleep=function(t) now=now+t end
+ peripheral.call=function(name,method,...)
+  if method=='tanks' then local result={};for fluid,amount in pairs(assert(pools[name],name)) do result[#result+1]={name=fluid,amount=amount} end;return result end
+  if method=='pushFluid' then
+   local target,amount,fluid=...;assert(pools[name] and pools[target])
+   local moved=target=='gear_store' and rejectGear and 0 or math.min(amount,fillLimit,pools[name][fluid] or 0)
+   pools[name][fluid]=(pools[name][fluid] or 0)-moved;pools[target][fluid]=(pools[target][fluid] or 0)+moved
+   moves[#moves+1]={source=name,target=target,fluid=fluid,moved=moved};return moved
+  end
+  error(method)
+ end
+ local cfg={sources={'main_store'},gearSources={'gear_store'},destinations={'gear_table'},basins={'block_basin'},clients={10},gearMinimumDefault=10000,gearMinimums={}}
+ local svc=factory('dedicated',cfg)
+ svc.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
+ assert(svc.refill()==17000 and pools.gear_store[iron]==10000 and pools.gear_store[diamond]==10000)
+ assert(pools.main_store[iron]==22000 and pools.main_store[diamond]==0)
+ local rows=svc.handle(10,{version=1,id='stock',method='stock'})
+ for _,row in ipairs(rows) do assert(row.amount==10000) end
+ local main=pools.main_store[iron]
+ svc.handle(10,{version=1,id='10:999999:1',method='pour',args={target='gear_table',fluid=iron,amount=90}})
+ assert(pools.main_store[iron]==main and pools.gear_store[iron]==9910 and pools.gear_table[iron]==90)
+ assert(svc.refill()==90 and pools.gear_store[iron]==10000)
+ svc.transfer(20,'monitor:20:1:1',{target='block_basin',fluid=iron,amount=810},true)
+ assert(moves[#moves].source=='main_store' and pools.gear_store[iron]==10000 and pools.block_basin[iron]==810)
+ pools.gear_store[iron]=0;main=pools.main_store[iron]
+ local ok,e=pcall(svc.handle,10,{version=1,id='10:999999:2',method='pour',args={target='gear_table',fluid=iron,amount=90}})
+ assert(not ok and tostring(e):find('Not Enough Fluid',1,true) and pools.main_store[iron]==main)
+ pools.main_store[iron]=10500;rejectGear=true
+ ok,e=pcall(svc.transfer,20,'monitor:20:2:1',{target='block_basin',fluid=iron,amount=810},true)
+ assert(not ok and pools.main_store[iron]==10500 and pools.gear_store[iron]==0 and svc.refillStatus:find('blocked',1,true))
+ rejectGear=false;cfg.gearMinimums[iron]=5000;cfg.gearMinimums[diamond]=0
+ svc.refill();assert(pools.gear_store[iron]==5000 and pools.main_store[iron]==5500 and svc.minimum(diamond)==0)
+ svc.handle(10,{version=1,id='hold',method='reserve',args={demand={[iron]=8000}}})
+ svc.refill();assert(pools.gear_store[iron]==8000 and pools.main_store[iron]==2500)
+ svc.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
+ pools.gear_store[iron]=0;pools.main_store[iron]=30000;fillLimit=2000
+ assert(svc.refill()==2000 and pools.gear_store[iron]==2000)
+ assert(svc.refill()==2000 and pools.gear_store[iron]==4000)
+ assert(svc.refill()==1000 and pools.gear_store[iron]==5000)
+ local count=#moves;svc=factory('dedicated',cfg);assert(svc.refill()==0 and #moves==count)
+ pools.gear_store[iron]=4900;assert(svc.refill()==100 and pools.gear_store[iron]==5000)
+ local bad={sources={'main_store'},gearSources={'main_store'},destinations={},basins={}}
+ assert(not pcall(factory,'overlapping-pools',bad))
+""")
+print('PASS dedicated Gear stock: 10,000 mB defaults, refill-before-block priority, exclusive source routing, no main fallback, blocked refill protection, per-fluid/zero overrides, larger queued demand, measured partial refills and restart-safe refill IDs')
+
+l.execute(r"""
+ -- The on-monitor minimum editor persists just the target and retains device assignments.
+ files['root/fluid_network.txt']=textutils.serialize({role='fluid',modem='left',monitors={'fluid_monitor'},sources={'main_store'},gearSources={'gear_store'},destinations={'gear_table'},basins={'block_basin'},clients={10},gearMinimumDefault=10000,gearMinimums={},blockOutputChest='block_chest'})
+ local previous=peripheral.call
+ peripheral.call=function(name,method,...) if method=='isWireless' then return false end;return previous(name,method,...) end
+ peripheral.hasType=function() return true end
+ App=assert(load(appSource))();App.connect();App.S.fluid='productivemetalworks:molten_iron';App.S.minimum=12000;App.S.minimumInherited=false
+ App.saveMinimum()
+ local saved=Network.load('root')
+ assert(saved.gearSources[1]=='gear_store' and saved.sources[1]=='main_store' and saved.gearMinimums[App.S.fluid]==12000)
+ assert(App.service.minimum(App.S.fluid)==12000)
+ App.S.gearStock=App.service.gearStatus();App.S.screen='gearStock';App.render()
+ App.S.screen='gearMinimum';App.render()
+ App.S.minimumInherited=true;App.saveMinimum();assert(Network.load('root').gearMinimums[App.S.fluid]==nil and App.service.minimum(App.S.fluid)==10000)
+ -- Source selector prevents assigning the same controller to both pools.
+ local main='functionalstorage:storage_controller_0';local gear='functionalstorage:storage_controller_1'
+ files['root/fluid_network.txt']=textutils.serialize({role='fluid',modem='left',monitors={'fluid_monitor'},sources={main},gearSources={},destinations={'productivemetalworks:casting_0'},basins={},clients={10}})
+ peripheral.getNames=function() return {main,gear} end
+ peripheral.getMethods=function() return {'tanks','pushFluid'} end
+ local picker=assert(load(orderedPicker))();picker.choose('gearSources','fluid',true)
+ local rows=picker.entries();assert(#rows==2 and rows[2].label=='[ ] '..gear);rows[2].action()
+ -- Returning to a main-menu instance with the selection represented in saved settings.
+ local cfg=Network.load('root');cfg.gearSources={gear};Network.save('root',cfg)
+ picker=assert(load(orderedPicker))();rows=picker.entries();rows[15].action()
+ saved=Network.load('root');assert(saved.gearMinimumDefault==10000 and saved.gearSources[1]==gear)
+ cfg.gearSources={main};Network.save('root',cfg);picker=assert(load(orderedPicker))();rows=picker.entries()
+ local ok,e=pcall(rows[15].action);assert(not ok and tostring(e):find('conflicts',1,true))
+""")
+print('PASS Gear target editor persistence/default reset, live service targets, rendered Gear stock pages, disjoint Functional Storage selectors and minimum defaults')
 for p in R.glob('*.lua'):
  ok,err=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,err)
 print('PASS all scripts compile in Lua 5.2')

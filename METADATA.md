@@ -188,3 +188,13 @@ existing queue formats remain valid. Preview planning uses cached stock only.
 - Queue entries use `mode="basin_blocks"`, completed block counts, pinned recipe
   amount/output IDs and per-basin pour/cooling/extraction checkpoints. Older buffer
   entries require cancellation/inspection; they are never migrated into new pours.
+
+## Gear-only fluid pool and targets (1.2.0)
+
+- Fluid Monitor, Fluid Service, Network Settings and Network Setup are 1.2.0.
+- Local `fluid_network.txt` adds `gearSources`, `gearMinimumDefault` (10000 mB),
+  and `gearMinimums` keyed by exact fluid registry ID. No updater manifest changes
+  are needed: all modified scripts are already distributed.
+- `stock`/`pour` RPCs use the Gear pool when assigned; local block casting uses main.
+  Refill transfers use a separate persisted receipt sequence and the main source pool.
+- Existing configurations without `gearSources` retain shared storage behavior.

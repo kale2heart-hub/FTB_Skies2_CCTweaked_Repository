@@ -1,12 +1,17 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"fluid_network","title":"Fluid Network Settings","launchable":false,"description":"Explicit per-computer wired network assignments."}
+-- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"fluid_network","title":"Fluid Network Settings","launchable":false,"description":"Explicit per-computer wired network assignments."}
 local T={protocol="crafting_center.fluids.v1",source="@fluid_service"}
 function T.load(root)
  local path=fs.combine(root,"fluid_network.txt")
  if fs.exists(path..".pending") then path=path..".pending" end
- if not fs.exists(path) then return {role="standalone",monitors={},sources={},destinations={},clients={},basins={}} end
+ if not fs.exists(path) then return {role="standalone",monitors={},sources={},destinations={},clients={},basins={},gearSources={},gearMinimumDefault=10000,gearMinimums={}} end
  local f=assert(fs.open(path,"r"));local c=textutils.unserialize(f.readAll());f.close()
  assert(type(c)=="table" and (c.role=="gear" or c.role=="fluid" or c.role=="standalone"),"Invalid fluid_network.txt; use Network Setup")
- for _,k in ipairs({"monitors","sources","destinations","clients","basins"}) do c[k]=c[k] or {};assert(type(c[k])=="table","Invalid network "..k) end
+ for _,k in ipairs({"monitors","sources","destinations","clients","basins","gearSources"}) do c[k]=c[k] or {};assert(type(c[k])=="table","Invalid network "..k) end
+ c.gearMinimumDefault=c.gearMinimumDefault==nil and 10000 or c.gearMinimumDefault
+ c.gearMinimums=c.gearMinimums or {}
+ assert(type(c.gearMinimumDefault)=="number" and c.gearMinimumDefault>=0 and c.gearMinimumDefault<=1000000000 and c.gearMinimumDefault==math.floor(c.gearMinimumDefault),"Invalid default Gear minimum")
+ assert(type(c.gearMinimums)=="table","Invalid Gear minimums")
+ for fluid,amount in pairs(c.gearMinimums) do assert(type(fluid)=="string" and type(amount)=="number" and amount>=0 and amount<=1000000000 and amount==math.floor(amount),"Invalid per-fluid Gear minimum") end
  return c
 end
 function T.save(root,c)

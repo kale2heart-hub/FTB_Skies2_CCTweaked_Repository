@@ -12,3 +12,8 @@ pours, blocked output, restart recovery, explicit uncertain-outcome resolution,
 waiting-job cancellation, bounded time/attempt limits, console setup, and Lua 5.2
 compilation. They do not
 connect to Minecraft or move actual items/fluids.
+
+Dedicated-store tests also verify exclusive main/Gear routing, 10,000 mB defaults,
+refill priority, per-fluid/default/zero targets, blocked capacity, queued demand,
+measured partial refills, restart-safe receipt IDs, selector overlap validation,
+and saved on-monitor minimum edits without losing device assignments.
