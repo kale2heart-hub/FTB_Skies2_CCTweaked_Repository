@@ -2,8 +2,18 @@
 
 Gear UI history is grouped under the current 1.0.x version scheme. Earlier
 internal development labels have been consolidated into the entries below;
-1.0.2 is the current Gear UI version. Supporting scripts retain independent
+1.0.3 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
+
+## Gear UI 1.0.3 - Stat paging timer fix
+
+- Automatic Stats & Traits paging uses a dedicated timer, independent of palette
+  animation and stock refresh. It advances every three seconds and wraps.
+- Any touch on a configured monitor cancels and restarts that timer with a
+  ten-second delay; further touches extend the pause.
+- Manual Previous/Next and the existing inactivity navigation remain available.
+- Actual UI event-loop tests cover timer advancement, wraparound, touch delays,
+  repeated touches and ignored cancelled events; Lua 5.2/regression checks pass.
 
 ## Gear UI 1.0.2 - Automatic stat paging and version baseline
 
