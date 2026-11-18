@@ -40,7 +40,7 @@ l.execute(r'''
   end
   local b=assert(h[name],name);mature(b)
   if method=='tanks' then return b.amount>0 and {{name=b.name,amount=b.amount}} or {} end
-  if method=='list' then return b.item and {[1]=b.item} or {} end
+  if method=='list' then return b.item and {[1]=b.item} or nil end
   if method=='pushItems' then assert(b.item);if outputBlocked then return 0 end;collected[b.item.name]=(collected[b.item.name] or 0)+1;b.item=nil;return 1 end
   error(method)
  end}
@@ -158,6 +158,21 @@ l.execute(r'''
  assert(#calls==first+2 and calls[first+1].target=='tank' and calls[first+2].target=='tank' and calls[first+1].fluid==iron and calls[first+2].fluid==gold)
 ''')
 print('PASS actual monitor worker: Pipez mode runs queued iron then gold, feeds only the Casting Fluid Tank, waits for collection/material clearance and persists progress')
+
+l.execute(r'''
+ local iron='productivemetalworks:molten_iron'
+ h={tank={amount=0},b1={amount=0},b2={amount=0}};store[iron]=100000000;bankLimit=55300000;fillLimit=1000000000
+ cfg.castingFluidTankCapacity=55300000
+ current=job(20,iron,68271);worker=assert(load(pipe_castingSource))()(cfg,service)
+ local before=#calls;tick()
+ assert(#calls==before+1 and calls[#calls].target=='tank' and calls[#calls].moved==55299510 and h.tank.amount==55299510)
+ -- Empty inventories intentionally return nil throughout this fixture, including recovery reads.
+ local call=peripheral.call
+ peripheral.call=function(name,method,...) if name=='b1' and method=='list' then return 17 end;return call(name,method,...) end
+ local ok,e=pcall(tick);assert(not ok and tostring(e):find('Invalid item inventory from basin b1',1,true))
+ peripheral.call=call
+''')
+print('PASS large tank feed: 55,299,510 mB in one batch, nil empty inventories/recovery paths handled, malformed non-table inventory gives a named error')
 for p in R.glob('*.lua'):
  ok,e=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,e)
 print('PASS Lua 5.2 syntax')

@@ -237,3 +237,12 @@ Fluid Service 1.4.0 owns this target and journals reverse `return:` receipts to 
 storage. Queue entries add `pipe` feed/return/top-up accounting and per-basin
 observations; existing `nextPour` supplies monotonic operation IDs. Basin helper
 1.1.1 accounts for already-fed fluid when calculating unpoured queue reservations.
+
+## Casting tank capacity (Fluid Monitor 1.5.1)
+
+Network Setup 1.5.1 and Fluid Network 1.4.1 persist
+`castingFluidTankCapacity` in mB, default 55,300,000. Manual Max and automatic
+batch limits divide this value by the material's block recipe volume.
+Fluid Service 1.4.1 permits feeds up to this capacity only for the assigned
+Casting Fluid Tank. Pipe casting 1.0.1 supports these feeds and normalizes nil
+empty inventories; malformed non-table snapshots fail with the device name.

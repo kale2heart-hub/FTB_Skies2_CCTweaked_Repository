@@ -1,5 +1,5 @@
--- @crafting-center {"version":"1.5.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["pipe_casting.lua","basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
-local VERSION="1.5.0"
+-- @crafting-center {"version":"1.5.1","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["pipe_casting.lua","basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
+local VERSION="1.5.1"
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -62,16 +62,23 @@ local function connect()
  assert(#displays>0 and W>=30 and H>=30,"Assign fluid monitors with at least 30x39 text cells")
 end
 local function center(s,w) s=tostring(s):sub(1,w);local left=math.floor((w-#s)/2);return string.rep(" ",left)..s..string.rep(" ",w-#s-left) end
-local function format(n) return n>=1000 and string.format("%.2f B",n/1000) or tostring(n).." mB" end
+local function format(n)
+ if n>=1000000 then return string.format("%.2f kB",n/1000000) end
+ return n>=1000 and string.format("%.2f B",n/1000) or tostring(n).." mB"
+end
 local function selectedStock() for _,row in ipairs(S.stock) do if row.name==S.fluid then return row.amount end end;return 0 end
 local function volume() return S.fluid and blockRules[S.fluid] and blockRules[S.fluid].amount end
+local function batchLimit(fluid)
+ local rule=blockRules[fluid]
+ return rule and math.max(1,math.floor((c.castingFluidTankCapacity or 55300000)/rule.amount)) or 1
+end
 local function navigate(screen) S.screen=screen;S.page=1;S.message="" end
 local function enqueue(fluid,shape,quantity,automatic)
  assert(shape=="Block","Liquid Resource Monitor casts whole blocks only")
  local rule=assert(blockRules[fluid],"No verified whole-block basin recipe for this fluid")
  assert(#(c.basins or {})>0,"Assign managed basins in Network Setup")
  assert(c.blockOutputChest and c.blockOutputChest~="","Assign the block output chest in Network Setup")
- assert(type(quantity)=="number" and quantity>=1 and quantity<=64 and quantity==math.floor(quantity),"Quantity must be 1 to 64 whole blocks")
+ assert(type(quantity)=="number" and quantity>=1 and quantity<=batchLimit(fluid) and quantity==math.floor(quantity),"Quantity must be 1 to "..batchLimit(fluid).." whole blocks for this material")
  local outputs={};for i,id in ipairs(rule.outputs) do outputs[i]=id end
  Q.jobs[#Q.jobs+1]={mode="basin_blocks",id=Q.nextId,fluid=fluid,shape="Block",quantity=quantity,completed=0,
   amount=rule.amount,outputs=outputs,units={},remaining=rule.amount*quantity,total=rule.amount*quantity,automatic=automatic or false}
@@ -164,7 +171,7 @@ local function render()
    elseif S.screen=="resources" or S.screen=="automatic" or S.screen=="gearStock" then
     local listing=S.screen=="gearStock" and S.gearStock or S.stock
     local size=math.max(1,math.floor((H-14)/3));local pages=math.max(1,math.ceil(#listing/size));S.page=math.max(1,math.min(S.page,pages))
-    line(6,S.screen=="gearStock" and "Gear-only stock / minimums" or S.screen=="automatic" and "Toggle automatic 64-block batches" or "Select a fluid",colors.blue)
+    line(6,S.screen=="gearStock" and "Gear-only stock / minimums" or S.screen=="automatic" and "Toggle automatic tank-sized batches" or "Select a fluid",colors.blue)
     if #listing==0 then line(9,S.screen=="gearStock" and (service.hasGearStore() and "Gear stock unavailable or no molten fluids found" or "Assign Gear-only storage in Network Setup") or S.stockError and "Storage unavailable" or "No fluids in assigned storage",nil,colors.lightGray) end
     for i=1,size do
      local fluid=listing[(S.page-1)*size+i]
@@ -208,12 +215,16 @@ local function render()
     line(16,amount and ("Need "..format(amount*S.quantity).." for "..S.quantity.." "..S.shape) or "No verified casting recipe for this fluid",nil,colors.lightGray)
     if S.screen=="review" then line(18,c.castingFluidTank and "Casting Fluid Tank > Pipez > basins > output" or "Cast, cool and collect into the block output chest",nil,colors.lightGray) end
     local labels={"Min","-16","-1","Qty:"..S.quantity,"+1","+16","Max"}
-    local delta={false,-16,-1,false,1,16,false};local unit=math.floor(W/7)
+    local delta={false,-16,-1,false,1,16,false}
+    local quantityWidth=math.max(8,#labels[4])
+    local unit=math.floor((W-quantityWidth)/6);local x=1
     for i,label in ipairs(labels) do
-     local index=i
-     button(1+(i-1)*unit,H-7,i==7 and W-6*unit or unit,label,i~=4 and function()
-      S.quantity=index==1 and 1 or index==7 and 64 or math.max(1,math.min(64,S.quantity+delta[index]))
+     local index=i;local width=i==4 and quantityWidth or i==7 and W-x+1 or unit
+     button(x,H-7,width,label,i~=4 and function()
+      local limit=batchLimit(S.fluid)
+      S.quantity=index==1 and 1 or index==7 and limit or math.max(1,math.min(limit,S.quantity+delta[index]))
      end or nil,i==4 and colors.cyan or colors.blue)
+     x=x+width
     end
     button(1,H-3,half,"Reset",function() S.quantity=1 end,colors.cyan)
     button(right,H-3,half,S.screen=="review" and "Add to Queue" or "Review",amount and function()
@@ -345,16 +356,20 @@ local function stockWorker()
     end
    end
    -- Keep one wave of unassigned work available, with bounded admission and fair material rotation.
-   for attempt=1,math.ceil(#c.basins/64)+1 do
+   for attempt=1,math.min(256,#c.basins)+1 do
     if waiting>=#c.basins or #S.stock==0 then break end
     local found=false
     for offset=1,#S.stock do
      local index=((S.autoCursor or 0)+offset-1)%#S.stock+1
      local fluid=S.stock[index];local rule=blockRules[fluid.name]
-     if rule and auto[fluid.name] and service.blockAvailable(fluid.name,fluid.amount)-(reserved[fluid.name] or 0)>=rule.amount*64 then
-      enqueue(fluid.name,"Block",64,true)
-      reserved[fluid.name]=(reserved[fluid.name] or 0)+rule.amount*64
-      waiting=waiting+64;S.autoCursor=index;found=true;break
+     if rule and auto[fluid.name] then
+      local available=service.blockAvailable(fluid.name,fluid.amount)-(reserved[fluid.name] or 0)
+      local quantity=math.min(batchLimit(fluid.name),math.floor(available/rule.amount))
+      if quantity>=1 then
+       enqueue(fluid.name,"Block",quantity,true)
+       reserved[fluid.name]=(reserved[fluid.name] or 0)+rule.amount*quantity
+       waiting=waiting+quantity;S.autoCursor=index;found=true;break
+      end
      end
     end
     if not found then break end

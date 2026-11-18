@@ -5,6 +5,21 @@ internal development labels have been consolidated into the entries below;
 1.2.1 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Fluid Monitor 1.5.1 - Large casting batches and empty basin fix
+
+Date: 2026-11-17
+
+- Removed the 64-block quantity limit. Max uses the configured casting tank
+  capacity, defaulting to 55,300,000 mB: 68,271 iron blocks at 810 mB each.
+- Automatic batches use available unreserved fluid up to that material's tank
+  limit. Existing queued quantities remain unchanged.
+- Network Setup 1.5.1 exposes Casting tank capacity in mB. Fluid Network and
+  Fluid Service 1.4.1 support the larger tank feed while retaining other transfer limits.
+- Pipe casting 1.0.1 treats nil empty item/fluid inventories as empty and reports
+  malformed inventories with the basin name instead of indexing a missing table.
+- Verified large feeds, quantity labels on narrow monitors, automatic sizing,
+  empty basin handling, recovery paths and Lua 5.2 syntax locally.
+
 ## Fluid Monitor 1.5.0 - Pipez Casting Fluid Tank
 
 Date: 2026-11-17

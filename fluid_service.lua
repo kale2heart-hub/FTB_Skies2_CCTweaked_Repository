@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.4.0","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
+-- @crafting-center {"version":"1.4.1","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
 return function(root,c)
  local T={busy=false,holds={},registrations={},last="Ready"}
  local path=fs.combine(root,"fluid_transfers.txt")
@@ -156,7 +156,8 @@ return function(root,c)
  end
  function T.transfer(sender,id,args,localRequest)
   assert(type(id)=="string" and #id<=160 and type(args)=="table","Invalid transfer request")
-  assert(type(args.target)=="string" and type(args.fluid)=="string" and integer(args.amount) and args.amount>0 and args.amount<=1000000,"Invalid fluid, destination or amount")
+  local limit=args.target==c.castingFluidTank and (c.castingFluidTankCapacity or 55300000) or 1000000
+  assert(type(args.target)=="string" and type(args.fluid)=="string" and integer(args.amount) and args.amount>0 and args.amount<=limit,"Invalid fluid, destination or amount")
   local refill=localRequest=="refill"
   assert(not sources[args.target],"Cannot send fluid back into main storage")
   local registered=T.registrations[sender]

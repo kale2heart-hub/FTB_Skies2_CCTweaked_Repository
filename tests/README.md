@@ -38,3 +38,8 @@ an unbounded backlog.
 monitor worker, including material barriers, limited drawer capacity, ten-second
 return-first recovery, exact top-up, checkpoint replay, bounded retries, missing
 fluid, a stalled tank and blocked output. It requires the same Lua 5.2 Lupa runtime.
+
+Large-batch checks cover the 55,300,000 mB default, material-specific Max,
+over-capacity rejection, automatic batches above 64, narrow-screen quantity
+labels and a 55,299,510 mB feed. Empty basin mocks return nil throughout Pipez
+recovery tests; malformed non-table inventories produce named errors.

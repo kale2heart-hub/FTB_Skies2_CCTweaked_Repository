@@ -298,7 +298,7 @@ any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
 
-## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.5.0)
+## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.5.1)
 
 The two computers share a wired modem network. Liquid Resource Monitor owns the
 Functional Storage fluid supply and serializes transfers. Gear UI requests exact
@@ -351,7 +351,7 @@ queuing new block jobs. Existing Gear stations, queues and cast records are not 
 
 ### Whole-block workflow
 
-- Resources -> fluid -> block quantity (1-64) -> Review -> Add to Queue.
+- Resources -> fluid -> block quantity (1 to the material-specific tank limit) -> Review -> Add to Queue.
   Ingot casting has been removed from the Fluid Monitor. Gear still handles its
   own equipment, parts and Other casting routes.
 - Each idle basin receives exactly one block's recipe volume. Multiple basins
@@ -373,8 +373,8 @@ queuing new block jobs. Existing Gear stations, queues and cast records are not 
 
 ### Automatic casting and Gear fluid requests
 
-Automatic Casting toggles each exact supported fluid. It queues 64 whole blocks
-when enough unreserved fluid exists. Gear queue demand and an optional per-fluid
+Automatic Casting toggles each exact supported fluid. It queues whole blocks from available unreserved fluid, up to the material-specific
+casting tank limit. Gear queue demand and an optional per-fluid
 extra reserve are protected. Local block pouring waits for a fresh Gear heartbeat;
 after fifteen seconds without one, it cannot consume Gear's reserved supply.
 Gear UI continues its heartbeat on Welcome. Restart Gear if necessary, then Resume
@@ -482,7 +482,7 @@ repeated-table serialization error for multiple batches of the same fluid. It
 serializes before writing and recovers a valid primary checkpoint if an incomplete
 pending file was left behind, retaining that rejected file for inspection.
 
-## Pipez casting (Fluid Monitor 1.5.0)
+## Pipez casting (Fluid Monitor 1.5.1)
 
 On the Fluid computer open Network Setup and assign **Casting Fluid Tank** to a
 separate Functional Storage fluid drawer. This tank must not be included in either
@@ -516,3 +516,13 @@ Existing recorded direct casts are finished before the new pipe begins feeding.
 Without a Casting Fluid Tank assignment, direct basin casting remains available.
 Do not remove/change the tank assignment during an active Pipez job; restore it if
 such a job needs to resume. Utilities offers explicit inspected-state recovery.
+
+### Casting tank capacity and quantity limits (1.5.1)
+
+Network Setup's Casting tank capacity defaults to 55,300,000 mB (55,300 buckets).
+Max divides this capacity by the selected material's block volume: iron is
+68,271 blocks at 810 mB each; amethyst is 138,250 at 400 mB each. Automatic
+batches also respect available fluid and Gear reservations. Existing queued
+quantities are preserved. Smaller actual tank acceptance is handled by feeding
+more of the same batch after the tank empties. Empty basin inventories reported
+as nil are accepted; invalid inventory data reports the affected basin.

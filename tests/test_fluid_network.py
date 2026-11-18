@@ -121,7 +121,7 @@ l.execute(r'''
 print('PASS client: pinned server/request matching, separate monitors/stations, stock/reservation/pour RPC and timeout without duplicate resend')
 
 monitor=(R/'fluid_monitor.lua').read_text()
-l.globals().appSource=monitor[:monitor.rindex('connect();render()')]+"\nreturn {S=S,Q=Q,service=service,connect=connect,render=render,enqueue=enqueue,worker=queueWorker,stockWorker=stockWorker,cancel=cancelJob,saveMinimum=saveMinimum}"
+l.globals().appSource=monitor[:monitor.rindex('connect();render()')]+"\nreturn {S=S,Q=Q,service=service,connect=connect,render=render,enqueue=enqueue,worker=queueWorker,stockWorker=stockWorker,cancel=cancelJob,saveMinimum=saveMinimum,batchLimit=batchLimit,displays=function() return displays end}"
 l.execute(r"""
  os.getComputerID=function() return 20 end
  os.epoch=function() return now*1000 end
@@ -202,11 +202,12 @@ l.execute(r"""
  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e);assert(#App.Q.jobs==0)
  App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={},layout={monitors={'gear_monitor'},destinations={'gear_table'},inventories={}}}})
  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e)
- assert(#App.Q.jobs==1 and App.Q.jobs[1].automatic and App.Q.jobs[1].mode=='basin_blocks' and App.Q.jobs[1].remaining==64*810)
- local tail=App.Q.jobs[1];tail.completed=62;tail.remaining=1620
+ local autoAmount=math.floor(App.service.blockAvailable('productivemetalworks:molten_iron',App.S.stock[1].amount)/810)
+ assert(#App.Q.jobs==1 and App.Q.jobs[1].automatic and App.Q.jobs[1].mode=='basin_blocks' and App.Q.jobs[1].quantity==autoAmount and autoAmount>64)
+ local tail=App.Q.jobs[1];tail.quantity=64;tail.completed=62;tail.remaining=1620
  tail.units={basin1={phase='cooling',moved=810},basin2={phase='cooling',moved=810}}
  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e)
- assert(#App.Q.jobs==2 and App.Q.jobs[2].quantity==64)
+ assert(#App.Q.jobs==2 and App.Q.jobs[2].quantity==autoAmount)
  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e);assert(#App.Q.jobs==2)
 
 """)
@@ -664,6 +665,25 @@ l.execute(r"""
  picker.choose('castingFluidTank','fluid',false);rows=picker.entries();rows[1].action();assert(picker.config.castingFluidTank==nil)
 """)
 print('PASS Casting Fluid Tank setup: Functional Storage only, excludes main/Gear stores, saved single assignment and explicit direct-mode clearing')
+
+l.execute(r"""
+ files['root/fluid_network.txt']=textutils.serialize({role='fluid',modem='left',monitors={'monitor_1'},sources={'main'},basins={'basin'},blockOutputChest='out',clients={10}})
+ files['root/fluid_jobs.txt']=nil;files['root/fluid_jobs.txt.pending']=nil
+ local app=assert(load(appSource))();local iron='productivemetalworks:molten_iron'
+ assert(app.batchLimit(iron)==68271 and app.batchLimit('productivemetalworks:molten_amethyst')==138250)
+ app.enqueue(iron,'Block',1000,false);app.enqueue(iron,'Block',68271,false)
+ assert(#app.Q.jobs==2 and app.Q.jobs[2].total==55299510)
+ assert(not pcall(app.enqueue,iron,'Block',68272,false))
+ local width,height=60,49;local shown=false
+ peripheral.wrap=function() return {setTextScale=function() end,setPaletteColor=function() end,getSize=function() return width,height end,
+ setCursorPos=function() end,blit=function(text,fg,bg) assert(#text==width and #fg==width and #bg==width);if text:find('Qty:68271',1,true) or text:find('Qty:138250',1,true) then shown=true end end} end
+ app.connect();app.S.screen='material';app.S.fluid=iron;app.S.quantity=1;app.render()
+ local max
+ for _,button in ipairs(app.displays()[1].buttons) do if button.y==33 and (not max or button.x>max.x) then max=button end end
+ assert(max);max.action();assert(app.S.quantity==68271);app.render();assert(shown)
+ width,height=30,39;shown=false;app.connect();app.S.fluid='productivemetalworks:molten_amethyst';app.S.quantity=138250;app.render();assert(shown)
+""")
+print('PASS 55,300,000 mB limits: batches beyond 64, iron Max 68,271, amethyst 138,250, over-capacity rejection and full quantity labels on narrow monitors')
 for p in R.glob('*.lua'):
  ok,err=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,err)
 print('PASS all scripts compile in Lua 5.2')

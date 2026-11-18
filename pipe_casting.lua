@@ -1,10 +1,13 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"pipe_casting","title":"Pipez Basin Casting","launchable":false,"description":"Single-material tank batches, item collection and bounded stalled-fluid recovery."}
+-- @crafting-center {"version":"1.0.1","suite":"crafting-center","id":"pipe_casting","title":"Pipez Basin Casting","launchable":false,"description":"Single-material tank batches, item collection and bounded stalled-fluid recovery."}
 return function(c,service)
  local T={}
  local function now() return os.epoch("utc")/1000 end
  local function fluidAt(name)
   local fluid,amount=nil,0
-  for _,tank in pairs(peripheral.call(name,"tanks")) do
+  local tanks=peripheral.call(name,"tanks")
+  if tanks==nil then tanks={} end
+  assert(type(tanks)=="table","Invalid fluid inventory from "..name)
+  for _,tank in pairs(tanks) do
    if (tank.amount or 0)>0 then
     assert(not fluid or fluid==tank.name,"Mixed fluids at "..name)
     fluid=tank.name;amount=amount+tank.amount
@@ -14,7 +17,10 @@ return function(c,service)
  end
  local function read(name)
   local fluid,amount=fluidAt(name)
-  return {items=peripheral.call(name,"list"),fluid=fluid,amount=amount}
+  local items=peripheral.call(name,"list")
+  if items==nil then items={} end
+  assert(type(items)=="table","Invalid item inventory from basin "..name)
+  return {items=items,fluid=fluid,amount=amount}
  end
  local function scan()
   local rows={};local index=0;local workers={}
@@ -135,7 +141,7 @@ return function(c,service)
    local available=0
    for _,row in ipairs(service.stock()) do if row.name==job.fluid then available=service.blockAvailable(job.fluid,row.amount) end end
    if available>0 then
-    p.feed={id=token(),amount=math.min(1000000,desired-committed,available)};save();addFeed(job,save,token)
+    p.feed={id=token(),amount=math.min(c.castingFluidTankCapacity or 55300000,desired-committed,available)};save();addFeed(job,save,token)
     tankAmount=select(2,fluidAt(p.tank))
    elseif not occupied then error("Not Enough Fluid for Pipez casting: "..job.fluid,0) end
   end
