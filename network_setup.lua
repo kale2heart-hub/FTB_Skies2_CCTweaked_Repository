@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.1.1","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
+-- @crafting-center {"version":"1.1.3","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -38,9 +38,12 @@ local function choose(key,kind,multi)
    local ok,wireless=pcall(peripheral.call,name,"isWireless");valid=ok and wireless==false
   end
   if key=="sources" then valid=isStorageSource(name,m) end
-  if key=="basins" then
-   valid=m.tanks and m.list and m.pushItems and not has(c.destinations,name) and
+  if key=="basins" or key=="destinations" then
+   local casting=m.tanks and m.list and m.pushItems and
     (name:match("^productivemetalworks:casting_")~=nil or peripheral.hasType(name,"productivemetalworks:casting"))
+   local other=key=="basins" and c.destinations or c.basins
+   -- Keep existing conflicts visible so they can be deselected, never silently reassigned.
+   valid=casting and ((not has(other,name) and not has(c.sources,name)) or has(c[key],name))
   elseif key=="blockOutputChest" then valid=m.list and m.size and m.pushItems and not m.tanks end
   if valid then choices[#choices+1]=name end
  end
@@ -73,10 +76,17 @@ local function save()
   assert(#c.clients>0 and c.clients[1]~=os.getComputerID(),"Set the Gear computer ID")
   assert(#c.destinations>0,"Allow the Gear casting destinations")
   local reserved={}
-  for _,name in ipairs(c.sources) do reserved[name]=true end
-  for _,name in ipairs(c.destinations) do assert(not reserved[name],"Storage cannot also be a Gear table");reserved[name]=true end
+  local function reserve(name,owner)
+   if reserved[name] then
+    local short=name:match("^[^:]+:(.+)$") or name
+    error(short.." conflicts with "..reserved[name]..". Remove its duplicate assignment from Network Setup.",0)
+   end
+   reserved[name]=owner
+  end
+  for _,name in ipairs(c.sources) do reserve(name,"a fluid storage source") end
+  for _,name in ipairs(c.destinations) do reserve(name,"a Gear casting destination") end
   for _,name in ipairs(c.basins) do
-   assert(not reserved[name],"Managed basins must be separate from storage/Gear tables and listed once");reserved[name]=true
+   reserve(name,"a managed block basin")
    local m=methods(name);assert(m.list and m.tanks and m.pushItems,"Basin must expose fluids and item output: "..name)
   end
   if #c.basins>0 then
@@ -95,8 +105,11 @@ local function entries()
   elseif field=="basins" then rows[1]={label="Clear managed basin selections",action=function() c.basins={} end} end
   for _,name in ipairs(choices) do
    local current=value(field);local active=multiple and has(current or {},name) or current==name
-   rows[#rows+1]={label=(active and "[x] " or "[ ] ")..name,action=function()
-    if multiple then c[field]=c[field] or {};toggle(c[field],name)
+   local conflict=(field=="basins" and has(c.destinations,name)) or (field=="destinations" and has(c.basins,name))
+   rows[#rows+1]={label=(active and "[x] " or "[ ] ")..name..(conflict and " [CONFLICT]" or ""),action=function()
+    if multiple then
+     if conflict and not has(c[field],name) then message="Device belongs to the other system; remove that assignment first";return end
+     c[field]=c[field] or {};toggle(c[field],name)
     else c[field]=name;view="main";selected=1;offset=0 end
    end}
   end
@@ -114,11 +127,17 @@ local function entries()
   {label="Block output chest: "..tostring(c.blockOutputChest or "unset"),action=function() choose("blockOutputChest","inventory",false) end},
   {label="Extra reserve for monitor casting: "..c.keepMb.." mB",action=function() input("keepMb","Additional fluid reserve per material (mB)") end},
   {label="Disable local block casting",action=function() c.basins={};c.blockOutputChest=nil;c.outputs=nil;message="Basins cleared; fluid monitoring and Gear requests remain available" end},
+  {label="Apply ranges: Gear 0-42 / Basins 43-105",action=function()
+   c.destinations={};c.basins={}
+   for i=0,42 do c.destinations[#c.destinations+1]="productivemetalworks:casting_"..i end
+   for i=43,105 do c.basins[#c.basins+1]="productivemetalworks:casting_"..i end
+   message="Draft: Gear 0-42; managed basins 43-105. Select SAVE to apply."
+  end},
   {label="SAVE configuration",action=save},
  }
 end
 local function draw()
- local w,h=term.getSize();local rows=entries();local visible=math.max(1,h-6)
+ local w,h=term.getSize();local rows=entries();local visible=math.max(1,h-9)
  selected=math.max(1,math.min(selected,#rows))
  if selected<=offset then offset=selected-1 end
  if selected>offset+visible then offset=selected-visible end
@@ -127,7 +146,14 @@ local function draw()
  line(1,"FLUID NETWORK SETUP | Computer "..os.getComputerID(),colors.blue)
  line(2,view=="choose" and ("Assign "..field.." | Changes are a draft") or "Separate computers | Explicit device assignments",nil,colors.lightGray)
  for i=1,visible do local row=rows[offset+i];if row then line(i+3,(selected==offset+i and "> " or "  ")..row.label,selected==offset+i and colors.blue or colors.black) end end
- line(h-2,message,nil,colors.lightGray)
+ local wrapped={};local row=""
+ for word in message:gmatch("%S+") do
+  if #row+#word+1>w and row~="" then wrapped[#wrapped+1]=row;row="" end
+  while #word>w do wrapped[#wrapped+1]=word:sub(1,w);word=word:sub(w+1) end
+  row=row=="" and word or row.." "..word
+ end
+ if row~="" then wrapped[#wrapped+1]=row end
+ for i=1,3 do line(h-6+i,wrapped[i] or "",nil,colors.lightGray) end
  line(h-1,"Arrows select | Enter apply | B back | R refresh | Q quit")
  return rows,visible
 end
@@ -140,7 +166,7 @@ while true do
   elseif key==keys.down then selected=math.min(#rows,selected+1)
   elseif key==keys.pageUp then selected=math.max(1,selected-visible)
   elseif key==keys.pageDown then selected=math.min(#rows,selected+visible)
-  elseif key==keys.enter and rows[selected] then local ok,err=pcall(rows[selected].action);if not ok then message=tostring(err) end
+  elseif key==keys.enter and rows[selected] then local ok,err=pcall(rows[selected].action);if not ok then message=tostring(err):gsub("^.-:%d+:%s*","") end
   elseif key==keys.r then if view=="choose" then choose(field,field=="monitors" and "monitor" or field=="modem" and "modem" or "fluid",multiple) end end
  end
 end

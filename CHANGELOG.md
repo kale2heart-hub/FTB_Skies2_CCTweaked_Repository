@@ -5,6 +5,21 @@ internal development labels have been consolidated into the entries below;
 1.1.0 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Network Setup 1.1.3 - Apply casting station ranges
+
+- Added a one-click draft assignment for the current physical layout: Gear
+  casting_0 through casting_42; managed block basins casting_43 through casting_105.
+- Replaces duplicate/stale selections with those exact non-overlapping ranges;
+  the user then saves the configuration. Other device assignments are retained.
+
+## Network Setup 1.1.2 - Explain and prevent basin conflicts
+
+- Existing Gear/basin overlaps remain visible with a CONFLICT marker so either
+  assignment can be deselected. New selections exclude the other system's devices.
+- Gear destinations now list casting devices, excluding storage controllers/tanks.
+- Validation names the conflicting device and its existing assignment. Status/error
+  text wraps over three lines instead of hiding the details behind a file location.
+
 ## Network Setup 1.1.1 / Diagnostics 1.0.2 - Numeric device ordering
 
 - Casting device lists now sort numeric suffixes naturally: casting_0, casting_1,

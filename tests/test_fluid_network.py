@@ -240,7 +240,7 @@ l.execute(r"""
  files['root/fluid_network.txt']=textutils.serialize(nc)
  os.getComputerID=function() return 10 end
  keys={q=1,b=2,backspace=3,up=4,down=5,pageUp=6,pageDown=7,enter=8,r=9}
- local input={};for i=1,11 do input[#input+1]={'key',keys.down} end
+ local input={};for i=1,12 do input[#input+1]={'key',keys.down} end
  input[#input+1]={'key',keys.enter};input[#input+1]={'key',keys.q}
  os.pullEvent=function() local event=table.remove(input,1);assert(event,'Console loop did not exit');return table.unpack(event) end
  term={getSize=function() return 60,22 end,setCursorPos=function(x,y) assert(x>=1 and x<=60 and y>=1 and y<=22) end,
@@ -260,7 +260,7 @@ l.globals().sourcePicker=setup[:setup.rindex('while true do')]+"\nreturn {choose
 l.execute(r"""
  local names={'functionalstorage:storage_controller_0','functionalstorage:chest_0','productivemetalworks:casting_0','othermod:tank_0','back'}
  peripheral.getNames=function() return names end
- peripheral.getMethods=function(name) if name=='functionalstorage:chest_0' then return {'list','pushItems'} end;return {'tanks','pushFluid'} end
+ peripheral.getMethods=function(name) if name=='functionalstorage:chest_0' then return {'list','pushItems'} elseif name=='productivemetalworks:casting_0' then return {'list','tanks','pushFluid','pushItems'} end;return {'tanks','pushFluid'} end
  peripheral.getType=function(name) if name=='back' then return 'fluid_storage','functionalstorage:fluid_drawer' end;return 'fluid_storage' end
  local picker=assert(load(sourcePicker))()
  picker.choose('sources','fluid',true)
@@ -270,7 +270,7 @@ l.execute(r"""
  assert(labels['Clear source selections'])
  picker.choose('destinations','fluid',true)
  labels={};for _,entry in ipairs(picker.entries()) do labels[entry.label]=true end
- assert(labels['[ ] productivemetalworks:casting_0'] and labels['[ ] othermod:tank_0'])
+ assert(labels['[ ] productivemetalworks:casting_0'] and not labels['[ ] othermod:tank_0'])
 """)
 print('PASS source picker: only Functional Storage fluid-capable devices, local-side type recognition, clear old selections and unchanged casting destination choices')
 
@@ -288,7 +288,7 @@ l.execute(r"""
  local picker=assert(load(sourcePicker))();picker.choose('basins','basin',true)
  local rows=picker.entries();assert(#rows==2 and rows[2].label=='[ ] productivemetalworks:casting_42');rows[2].action()
  picker.choose('blockOutputChest','inventory',false);rows=picker.entries();assert(#rows==1 and rows[1].label=='[ ] sophisticatedstorage:chest_9');rows[1].action()
- rows=picker.entries();rows[12].action()
+ rows=picker.entries();rows[13].action()
  local saved=textutils.unserialize(files['root/fluid_network.txt']);assert(saved.basins[1]=='productivemetalworks:casting_42' and saved.blockOutputChest=='sophisticatedstorage:chest_9' and saved.outputs==nil)
 """)
 print('PASS managed-basin setup: Gear destinations excluded, multiple-basin selection, inventory-only output chest and saved basin-only assignments')
@@ -303,6 +303,25 @@ l.execute(r"""
  for i,n in ipairs(expected) do assert(tonumber(rows[i].label:match('_(%d+)$'))==n,rows[i].label) end
 """)
 print('PASS numeric casting order: 0 through 10, then 100/101/103')
+
+l.execute(r"""
+ -- Existing overlaps can be deselected; the range action removes stale/duplicate assignments.
+ local cfg=textutils.unserialize(files['root/fluid_network.txt'])
+ cfg.destinations={'productivemetalworks:casting_42'};cfg.basins={'productivemetalworks:casting_42'}
+ files['root/fluid_network.txt']=textutils.serialize(cfg)
+ peripheral.getNames=function() return {'productivemetalworks:casting_42','sophisticatedstorage:chest_9'} end
+ local picker=assert(load(orderedPicker))();picker.choose('basins','basin',true)
+ local rows=picker.entries();assert(rows[2].label:find('[CONFLICT]',1,true));rows[2].action()
+ picker.choose('blockOutputChest','inventory',false);rows=picker.entries();rows[1].action()
+ rows=picker.entries();rows[12].action();rows[13].action()
+ local saved=textutils.unserialize(files['root/fluid_network.txt'])
+ assert(#saved.destinations==43 and #saved.basins==63)
+ assert(saved.destinations[1]=='productivemetalworks:casting_0' and saved.destinations[43]=='productivemetalworks:casting_42')
+ assert(saved.basins[1]=='productivemetalworks:casting_43' and saved.basins[63]=='productivemetalworks:casting_105')
+ local used={};for _,name in ipairs(saved.destinations) do used[name]=true end;for _,name in ipairs(saved.basins) do assert(not used[name]);used[name]=true end
+ assert(saved.blockOutputChest=='sophisticatedstorage:chest_9')
+""")
+print('PASS existing conflicts can be deselected; exact Gear 0-42 / basin 43-105 plan saves without overlaps and preserves output assignment')
 for p in R.glob('*.lua'):
  ok,err=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,err)
 print('PASS all scripts compile in Lua 5.2')

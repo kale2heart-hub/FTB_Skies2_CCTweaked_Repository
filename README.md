@@ -316,10 +316,11 @@ and collects it into a dedicated output chest.
 3. On the fluid computer choose role **fluid**, assign only its monitors and
    Functional Storage fluid controllers/drawers, and enter **Gear: Computer ID**.
    Select the allowed Gear destinations: Gear's basin and assigned casting tables
-   (currently casting_0 and casting_2 through casting_41). Include casting_1 only
-   if the manual Casting Test should be allowed to use it.
+   (current reserved range: casting_0 through casting_42, including the manual
+   test station). Use **Apply ranges: Gear 0-42 / Basins 43-105** to fill both lists.
 4. Select **Managed block basins** for the Fluid Monitor. Use additional physical
-   basins, separate from Gear's casting_0 and tables. The selector excludes
+   basins (casting_43 through casting_105), separate from Gear's casting_0 through
+   casting_42. The selector excludes
    assigned Gear destinations. Productive Metalworks exposes tables and basins
    with the same casting peripheral type: select the devices that are physically
    basins. Assign **Block output chest** to collect the completed blocks.
