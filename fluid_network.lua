@@ -1,12 +1,12 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"fluid_network","title":"Fluid Network Settings","launchable":false,"description":"Explicit per-computer wired network assignments."}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"fluid_network","title":"Fluid Network Settings","launchable":false,"description":"Explicit per-computer wired network assignments."}
 local T={protocol="crafting_center.fluids.v1",source="@fluid_service"}
 function T.load(root)
  local path=fs.combine(root,"fluid_network.txt")
  if fs.exists(path..".pending") then path=path..".pending" end
- if not fs.exists(path) then return {role="standalone",monitors={},sources={},destinations={},clients={}} end
+ if not fs.exists(path) then return {role="standalone",monitors={},sources={},destinations={},clients={},basins={}} end
  local f=assert(fs.open(path,"r"));local c=textutils.unserialize(f.readAll());f.close()
  assert(type(c)=="table" and (c.role=="gear" or c.role=="fluid" or c.role=="standalone"),"Invalid fluid_network.txt; use Network Setup")
- for _,k in ipairs({"monitors","sources","destinations","clients"}) do c[k]=c[k] or {};assert(type(c[k])=="table","Invalid network "..k) end
+ for _,k in ipairs({"monitors","sources","destinations","clients","basins"}) do c[k]=c[k] or {};assert(type(c[k])=="table","Invalid network "..k) end
  return c
 end
 function T.save(root,c)

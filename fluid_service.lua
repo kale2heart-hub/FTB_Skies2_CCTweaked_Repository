@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
 return function(root,c)
  local T={busy=false,holds={},last="Ready"}
  local path=fs.combine(root,"fluid_transfers.txt")
@@ -32,7 +32,11 @@ return function(root,c)
  for _,name in ipairs(c.sources or {}) do assert(not sources[name],"Duplicate fluid source");sources[name]=true end
  local targets={}
  for _,name in ipairs(c.destinations or {}) do targets[name]=true end
- for _,name in pairs(c.outputs or {}) do if name~="" then assert(not targets[name] and not sources[name],"Fluid Monitor outputs must be separate from Gear tables/storage");targets[name]="local" end end
+ for _,name in ipairs(c.basins or {}) do
+  assert(not targets[name] and not sources[name],"Managed basins must be separate from Gear tables/storage and listed once")
+  targets[name]="local"
+ end
+ if c.blockOutputChest then assert(not targets[c.blockOutputChest] and not sources[c.blockOutputChest],"Block output chest overlaps a fluid source or casting destination") end
  function T.stock()
   assert(next(sources),"No fluid storage assigned in Network Setup")
   local totals={}
@@ -127,7 +131,10 @@ return function(root,c)
  function T.handle(sender,message)
   assert(type(message)=="table" and message.version==1 and type(message.id)=="string","Invalid service message")
   assert(knownClient(sender),"Gear computer is not assigned in Network Setup")
-  if message.method=="info" then return {monitors=c.monitors or {},outputs=c.outputs or {},computerId=os.getComputerID()} end
+  if message.method=="info" then
+   local outputs={};for i,name in ipairs(c.basins or {}) do outputs["Basin"..i]=name end
+   return {monitors=c.monitors or {},outputs=outputs,basins=c.basins or {},computerId=os.getComputerID()}
+  end
   if message.method=="stock" then return T.stock() end
   if message.method=="reserve" then
    local demand=message.args and message.args.demand;assert(type(demand)=="table","Invalid queue reservation")

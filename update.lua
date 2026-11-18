@@ -1,10 +1,10 @@
--- @crafting-center {"version":"1.5.0","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Check the updater first; install and reboot if changed, otherwise update the remaining scripts from one GitHub commit.","refreshAfterExit":true,"category":"Tools"}
+-- @crafting-center {"version":"1.6.0","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Check the updater first; install and reboot if changed, otherwise update the remaining scripts from one GitHub commit.","refreshAfterExit":true,"category":"Tools"}
 -- Public GitHub updater. Queue, station bindings and job state are untouched.
 local OWNER="kale2heart-hub"
 local REPOSITORY="FTB_Skies2_CCTweaked_Repository"
 local BRANCH="main"
 local SCRIPT_DIRECTORY="" -- Scripts currently live at the repository root.
-local files={"fluid_network.lua","fluid_client.lua","fluid_service.lua","fluid_monitor.lua","network_setup.lua","gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_ui.lua","gear_config.lua","scan.lua","gear_demo.lua",
+local files={"basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_client.lua","fluid_service.lua","fluid_monitor.lua","network_setup.lua","gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_ui.lua","gear_config.lua","scan.lua","gear_demo.lua",
     "station_setup.lua","cast_check.lua","casting_test.lua","control_center.lua","startup.lua","update.lua"}
 local root=fs.getDir(shell.getRunningProgram())
 local versions,transactions,staged={},{},{}
@@ -18,7 +18,7 @@ end
 local function get(url,json)
     if not http then error("HTTP is disabled on this computer.",0) end
     local response,err,failed=http.get(url,{
-        ["User-Agent"]="CraftingCenterUpdater/1.5.0",
+        ["User-Agent"]="CraftingCenterUpdater/1.6.0",
         ["Accept"]=json and "application/vnd.github+json" or "text/plain",
     })
     if not response then

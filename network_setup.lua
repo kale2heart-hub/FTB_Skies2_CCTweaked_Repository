@@ -1,8 +1,8 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, casting buffers and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
-c.outputs=c.outputs or {};c.keepMb=c.keepMb or 0
+c.basins=c.basins or {};c.keepMb=c.keepMb or 0
 local selected,offset,view=1,0,"main"
 local message="Assign devices before joining networks. Computer ID: "..os.getComputerID()
 local choices,field,multiple={},nil,false
@@ -13,6 +13,15 @@ local function methods(name)
  if ok then for _,method in ipairs(result or {}) do set[method]=true end end
  return set
 end
+local function isStorageSource(name,m)
+ if not (m.tanks and m.pushFluid) then return false end
+ if name:match("^functionalstorage:") then return true end
+ local types={pcall(peripheral.getType,name)}
+ if types[1] then
+  for i=2,#types do if type(types[i])=="string" and types[i]:match("^functionalstorage:") then return true end end
+ end
+ return false
+end
 local function choose(key,kind,multi)
  choices={};field=key;multiple=multi
  for _,name in ipairs(peripheral.getNames()) do
@@ -21,12 +30,16 @@ local function choose(key,kind,multi)
   if kind=="modem" and has({"left","right","top","bottom","front","back"},name) and peripheral.hasType(name,"modem") then
    local ok,wireless=pcall(peripheral.call,name,"isWireless");valid=ok and wireless==false
   end
+  if key=="sources" then valid=isStorageSource(name,m) end
+  if key=="basins" then
+   valid=m.tanks and m.list and m.pushItems and not has(c.destinations,name) and
+    (name:match("^productivemetalworks:casting_")~=nil or peripheral.hasType(name,"productivemetalworks:casting"))
+  elseif key=="blockOutputChest" then valid=m.list and m.size and m.pushItems and not m.tanks end
   if valid then choices[#choices+1]=name end
  end
  table.sort(choices);view="choose";selected=1;offset=0;message="Enter selects/toggles | B returns"
 end
 local function value(key)
- if key=="ingot" then return c.outputs.Ingot elseif key=="block" then return c.outputs.Block end
  return c[key]
 end
 local function input(key,label)
@@ -46,24 +59,38 @@ local function save()
   assert(type(c.serverId)=="number","Set Fluid Monitor computer ID")
   assert(c.serverId~=os.getComputerID(),"Partner computer must have a different ID")
  else
-  assert(#c.sources>0,"Assign fluid storage")
+  assert(#c.sources>0,"Assign Functional Storage fluid sources")
+  for _,name in ipairs(c.sources) do
+   assert(isStorageSource(name,methods(name)),"Source must be a connected Functional Storage fluid device: "..name..". Clear source selections and reselect if needed.")
+  end
   assert(#c.clients>0 and c.clients[1]~=os.getComputerID(),"Set the Gear computer ID")
   assert(#c.destinations>0,"Allow the Gear casting destinations")
   local reserved={}
   for _,name in ipairs(c.sources) do reserved[name]=true end
   for _,name in ipairs(c.destinations) do assert(not reserved[name],"Storage cannot also be a Gear table");reserved[name]=true end
-  for _,name in pairs(c.outputs) do if name~="" then assert(not reserved[name],"Monitor buffers must be separate from storage and Gear tables");reserved[name]=true end end
+  for _,name in ipairs(c.basins) do
+   assert(not reserved[name],"Managed basins must be separate from storage/Gear tables and listed once");reserved[name]=true
+   local m=methods(name);assert(m.list and m.tanks and m.pushItems,"Basin must expose fluids and item output: "..name)
+  end
+  if #c.basins>0 then
+   local output=c.blockOutputChest;assert(type(output)=="string" and output~="","Assign the block output chest")
+   assert(not reserved[output],"Output chest cannot be a basin, fluid source or Gear station")
+   local m=methods(output);assert(m.list and m.size and m.pushItems,"Block output must be an inventory")
+  end
+  c.outputs=nil -- Retire the old ingot/block buffer assignments without reusing them as basins.
  end
  N.save(ROOT,c);message="Saved fluid_network.txt. Restart the affected application to apply."
 end
 local function entries()
  if view=="choose" then
   local rows={}
+  if field=="sources" then rows[1]={label="Clear source selections",action=function() c.sources={} end}
+  elseif field=="basins" then rows[1]={label="Clear managed basin selections",action=function() c.basins={} end} end
   for _,name in ipairs(choices) do
    local current=value(field);local active=multiple and has(current or {},name) or current==name
    rows[#rows+1]={label=(active and "[x] " or "[ ] ")..name,action=function()
     if multiple then c[field]=c[field] or {};toggle(c[field],name)
-    else if field=="ingot" then c.outputs.Ingot=name elseif field=="block" then c.outputs.Block=name else c[field]=name end;view="main";selected=1;offset=0 end
+    else c[field]=name;view="main";selected=1;offset=0 end
    end}
   end
   return rows
@@ -72,14 +99,14 @@ local function entries()
   {label="Role: "..c.role,action=function() c.role=c.role=="gear" and "fluid" or "gear" end},
   {label="Local wired modem: "..tostring(c.modem or "unset"),action=function() choose("modem","modem",false) end},
   {label="Assigned monitors: "..#c.monitors,action=function() choose("monitors","monitor",true) end},
-  {label="Gear: Fluid Monitor ID: "..tostring(c.serverId or "unset"),action=function() input("serverId","Fluid Monitor computer ID") end},
-  {label="Fluid Monitor: Gear ID: "..tostring(c.clients[1] or "unset"),action=function() input("client","Gear computer ID") end},
-  {label="Fluid storage sources: "..#c.sources,action=function() choose("sources","fluid",true) end},
+  {label="Fluid: Computer ID: "..tostring(c.serverId or "unset"),action=function() input("serverId","Fluid: Computer ID") end},
+  {label="Gear: Computer ID: "..tostring(c.clients[1] or "unset"),action=function() input("client","Gear: Computer ID") end},
+  {label="Functional Storage sources: "..#c.sources,action=function() choose("sources","fluid",true) end},
   {label="Allowed Gear casting destinations: "..#c.destinations,action=function() choose("destinations","fluid",true) end},
-  {label="Monitor ingot buffer: "..tostring(c.outputs.Ingot or "unset"),action=function() choose("ingot","fluid",false) end},
-  {label="Monitor block buffer: "..tostring(c.outputs.Block or "unset"),action=function() choose("block","fluid",false) end},
+  {label="Managed block basins: "..#c.basins,action=function() choose("basins","basin",true) end},
+  {label="Block output chest: "..tostring(c.blockOutputChest or "unset"),action=function() choose("blockOutputChest","inventory",false) end},
   {label="Extra reserve for monitor casting: "..c.keepMb.." mB",action=function() input("keepMb","Additional fluid reserve per material (mB)") end},
-  {label="Disable monitor casting buffers",action=function() c.outputs={};message="Buffers cleared; monitoring and Gear service remain available" end},
+  {label="Disable local block casting",action=function() c.basins={};c.blockOutputChest=nil;c.outputs=nil;message="Basins cleared; fluid monitoring and Gear requests remain available" end},
   {label="SAVE configuration",action=save},
  }
 end

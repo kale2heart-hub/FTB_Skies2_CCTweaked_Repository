@@ -1,11 +1,13 @@
--- @crafting-center {"version":"1.0.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, casting buffers, automatic casting and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["fluid_network.lua","fluid_service.lua"]}
-local VERSION="1.0.0"
+-- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
+local VERSION="1.1.0"
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
 assert(c.role=="fluid","Assign this computer to Fluid Monitor in Fluid Network Setup first")
 N.open(c)
 local service=dofile(fs.combine(ROOT,"fluid_service.lua"))(ROOT,c)
+local blockRules=dofile(fs.combine(ROOT,"basin_casting_data.lua"))
+local basins=dofile(fs.combine(ROOT,"basin_casting.lua"))(c,service)
 local S={screen="welcome",page=1,quantity=1,shape="Block",message="",stock={},lastTouch=os.clock()}
 local displays,W,H={},math.huge,math.huge
 local palette={[colors.black]=0x101820,[colors.blue]=0x25394D,[colors.gray]=0x334155,[colors.lightGray]=0xAAB8C5,[colors.cyan]=0x176B80,[colors.green]=0x265F4B,[colors.red]=0x8B3545,[colors.white]=0xF0F5FA}
@@ -26,6 +28,9 @@ local function saveState(name,value)
 end
 local Q=loadState("fluid_jobs.txt",{jobs={},nextId=1,paused=false})
 assert(type(Q.jobs)=="table" and type(Q.nextId)=="number","Invalid fluid_jobs.txt")
+for _,job in ipairs(Q.jobs) do
+ if job.mode~="basin_blocks" then Q.paused=true;Q.reason="Legacy buffer job: cancel it and queue whole blocks after assigning basins" end
+end
 local auto=loadState("fluid_auto.txt",{})
 local function saveQueue() saveState("fluid_jobs.txt",Q) end
 local function connect()
@@ -42,13 +47,42 @@ end
 local function center(s,w) s=tostring(s):sub(1,w);local left=math.floor((w-#s)/2);return string.rep(" ",left)..s..string.rep(" ",w-#s-left) end
 local function format(n) return n>=1000 and string.format("%.2f B",n/1000) or tostring(n).." mB" end
 local function selectedStock() for _,row in ipairs(S.stock) do if row.name==S.fluid then return row.amount end end;return 0 end
-local function volume() return S.fluid and N.volume(S.shape,S.fluid) end
+local function volume() return S.fluid and blockRules[S.fluid] and blockRules[S.fluid].amount end
 local function navigate(screen) S.screen=screen;S.page=1;S.message="" end
 local function enqueue(fluid,shape,quantity,automatic)
- local amount=N.volume(shape,fluid);assert(amount,"This fluid has no verified ingot volume")
- local target=(c.outputs or {})[shape];assert(target and target~="","Assign a separate "..shape.." casting buffer in Network Setup")
- Q.jobs[#Q.jobs+1]={id=Q.nextId,fluid=fluid,shape=shape,quantity=quantity,remaining=amount*quantity,total=amount*quantity,target=target,automatic=automatic or false}
+ assert(shape=="Block","Liquid Resource Monitor casts whole blocks only")
+ local rule=assert(blockRules[fluid],"No verified whole-block basin recipe for this fluid")
+ assert(#(c.basins or {})>0,"Assign managed basins in Network Setup")
+ assert(c.blockOutputChest and c.blockOutputChest~="","Assign the block output chest in Network Setup")
+ assert(type(quantity)=="number" and quantity>=1 and quantity<=64 and quantity==math.floor(quantity),"Quantity must be 1 to 64 whole blocks")
+ Q.jobs[#Q.jobs+1]={mode="basin_blocks",id=Q.nextId,fluid=fluid,shape="Block",quantity=quantity,completed=0,
+  amount=rule.amount,outputs=rule.outputs,units={},remaining=rule.amount*quantity,total=rule.amount*quantity,automatic=automatic or false}
  Q.nextId=Q.nextId+1;saveQueue();os.queueEvent("fluid_queue_changed")
+end
+local function cancelJob(index)
+ assert(not S.busy or index~=1,"Wait for the current basin operation")
+ local job=Q.jobs[index];if not job then return end
+ for basin,unit in pairs(job.units or {}) do
+  if unit.phase=="partial" and (unit.moved or 0)==0 then job.units[basin]=nil end
+ end
+ local active=basins.active(job)
+ if active>0 then
+  job.quantity=(job.completed or 0)+active;job.remaining=active*job.amount
+  S.message="Waiting blocks cancelled; active basins will finish and collect"
+ else
+  table.remove(Q.jobs,index)
+  if index==1 then Q.paused=false;Q.reason=nil end
+  S.message="Job cancelled"
+ end
+ saveQueue();os.queueEvent("fluid_queue_changed")
+end
+local function resolveBasins(mode)
+ assert(not S.busy,"Wait for current basin operation")
+ service.acknowledge()
+ local job=Q.jobs[1]
+ if job and job.mode=="basin_blocks" then basins.resolve(job,saveQueue,mode) end
+ Q.paused=false;Q.reason=nil;saveQueue();os.queueEvent("fluid_queue_changed")
+ navigate("utilities")
 end
 local function render()
  for _,d in ipairs(displays) do
@@ -107,7 +141,7 @@ local function render()
       local label=N.label(fluid.name).." ("..format(fluid.amount)..")"
       if S.screen=="automatic" then label=(auto[fluid.name] and "[ON] " or "[OFF] ")..label end
       button(1,8+(i-1)*3,W,label,function()
-       if S.screen=="automatic" then auto[fluid.name]=not auto[fluid.name];saveState("fluid_auto.txt",auto)
+       if S.screen=="automatic" then assert(blockRules[fluid.name],"No verified whole-block recipe for this fluid");auto[fluid.name]=not auto[fluid.name];saveState("fluid_auto.txt",auto)
        else S.fluid=fluid.name;S.quantity=1;navigate("material") end
       end,auto[fluid.name] and S.screen=="automatic" and colors.green or colors.blue)
      end
@@ -119,11 +153,11 @@ local function render()
     line(6,N.label(S.fluid),colors.blue)
     line(9,"Available: "..format(selectedStock()),nil,colors.lightGray)
     line(11,"Gear reserved: "..format(service.reserved(S.fluid)),nil,colors.lightGray)
-    button(1,13,half,"Ingot",function() S.shape="Ingot" end,S.shape=="Ingot" and colors.cyan or colors.blue)
-    button(right,13,half,"Block",function() S.shape="Block" end,S.shape=="Block" and colors.cyan or colors.blue)
+    line(13,"Casting: Whole Blocks",colors.cyan)
+    line(20,"Managed basins: "..#(c.basins or {}),nil,colors.lightGray)
     local amount=volume()
     line(16,amount and ("Need "..format(amount*S.quantity).." for "..S.quantity.." "..S.shape) or "No verified casting recipe for this fluid",nil,colors.lightGray)
-    if S.screen=="review" then line(18,"Send fluid to the assigned casting buffer",nil,colors.lightGray) end
+    if S.screen=="review" then line(18,"Cast, cool and collect into the block output chest",nil,colors.lightGray) end
     local labels={"Min","-16","-1","Qty:"..S.quantity,"+1","+16","Max"}
     local delta={false,-16,-1,false,1,16,false};local unit=math.floor(W/7)
     for i,label in ipairs(labels) do
@@ -134,7 +168,7 @@ local function render()
     end
     button(1,H-3,half,"Reset",function() S.quantity=1 end,colors.cyan)
     button(right,H-3,half,S.screen=="review" and "Add to Queue" or "Review",amount and function()
-     if S.screen=="review" then enqueue(S.fluid,S.shape,S.quantity,false);S.quantity=1;S.message="Added to casting-buffer queue"
+     if S.screen=="review" then enqueue(S.fluid,S.shape,S.quantity,false);S.quantity=1;S.message="Whole blocks added to queue"
      else navigate("review") end
     end or nil,colors.cyan)
    elseif S.screen=="queue" then
@@ -142,10 +176,10 @@ local function render()
     local size=math.max(1,math.floor((H-17)/3));local pages=math.max(1,math.ceil(#Q.jobs/size));S.page=math.max(1,math.min(S.page,pages))
     for i=1,size do
      local index=(S.page-1)*size+i;local job=Q.jobs[index]
-     if job then button(1,8+(i-1)*3,W,"Cancel "..N.label(job.fluid).." "..job.shape.." ("..format(job.remaining)..")",function()
-      assert(not S.busy or index~=1,"Wait for the transfer to finish")
-      table.remove(Q.jobs,index);Q.paused=false;Q.reason=nil;saveQueue();S.message="Job cancelled; transferred fluid stays at its destination"
-     end,colors.gray) end
+     if job then
+      local count=job.mode=="basin_blocks" and (job.quantity-(job.completed or 0)).." blocks" or format(job.remaining)
+      button(1,8+(i-1)*3,W,(basins.active(job)>0 and "Cancel waiting: " or "Cancel: ")..N.label(job.fluid).." ("..count..")",function() cancelJob(index) end,colors.gray)
+     end
     end
     if #Q.jobs==0 then line(10,"Queue idle",nil,colors.lightGray) end
     button(1,H-8,half,"Previous",S.page>1 and function() S.page=S.page-1 end or nil)
@@ -159,25 +193,30 @@ local function render()
      line(11,"Inspect: "..problems[1].target,nil,colors.red)
      line(13,N.label(problems[1].fluid).." requested "..format(problems[1].amount),nil,colors.lightGray)
     end
-    line(15,"Gear holds are protected; stale heartbeats stop local casting",nil,colors.lightGray)
-    button(1,H-7,W,"Inspect Complete / Acknowledge",(#problems>0 or service.fault) and function() navigate("acknowledge") end or nil,colors.gray)
+    line(15,"Gear holds protected | Managed basins: "..#(c.basins or {}),nil,colors.lightGray)
+    button(1,H-7,W,"Inspect Complete / Acknowledge",(#problems>0 or service.fault or Q.paused) and function() navigate("acknowledge") end or nil,colors.gray)
     button(1,H-3,W,"Refresh Storage",function() os.queueEvent("fluid_refresh") end)
    elseif S.screen=="acknowledge" then
-    line(7,"Inspect affected buffers/tables before acknowledging",nil,colors.red)
-    line(10,"Cancel any affected monitor job and inspect Gear errors.",nil,colors.lightGray)
+    line(7,"Inspect affected basins and the output chest first",nil,colors.red)
+    line(10,"Retry empty = cast again. Delivered = count existing output.",nil,colors.lightGray)
     line(13,"This clears the service lock; no transfer is repeated.",nil,colors.lightGray)
-    button(1,H-3,W,"Confirm inspected / clear service lock",function() service.acknowledge();navigate("utilities") end,colors.cyan)
+    button(1,H-9,W,"Recheck inspected basin contents",function() resolveBasins(nil) end,colors.gray)
+    button(1,H-6,W,"Retry inspected empty basins",function() resolveBasins("retry") end,colors.cyan)
+    button(1,H-3,W,"Confirm empty basins already delivered",function() resolveBasins(true) end,colors.cyan)
    end
    if S.message~="" then line(H,S.message,nil,colors.lightGray) end
-   if S.screen~="main" and S.screen~="queue" then
+   if S.screen~="main" then
     local top=d.h-7;text(ox+1,top,W,string.rep("-",W),nil,colors.gray)
-    text(ox+1,top+1,W,"Queue: "..#Q.jobs.." | "..(S.busy and "Sending fluid" or Q.paused and "Error - Queue paused" or "Ready"),nil,Q.paused and colors.red or colors.lightGray,true)
+    text(ox+1,top+1,W,"Queue: "..#Q.jobs.." | "..(S.busy and "Managing basins" or Q.paused and "Error - Queue paused" or "Ready"),nil,Q.paused and colors.red or colors.lightGray,true)
+    local cast=basins.progress
     local progress=service.progress
-    if progress and os.clock()-progress.at<=4 then
-     local fill=math.floor(W*math.min(1,progress.moved/progress.requested))
-     text(ox+1,top+3,fill,"",progress.completed and colors.green or colors.cyan)
+    if cast and (cast.phase~="completed" or os.clock()-cast.at<=4) then
+     local fill=math.floor(W*math.max(0,math.min(1,cast.moved)))
+     text(ox+1,top+3,fill,"",cast.phase=="completed" and colors.green or colors.cyan)
      text(ox+1+fill,top+3,W-fill,"",colors.gray)
-     text(ox+1,top+4,W,(progress.completed and "Completed: " or "Sending: ")..format(progress.moved).." / "..format(progress.requested),nil,colors.lightGray,true)
+     text(ox+1,top+4,W,cast.phase.." | "..cast.completed.." / "..cast.quantity.." blocks",nil,colors.lightGray,true)
+    elseif progress and os.clock()-progress.at<=4 then
+     text(ox+1,top+3,W,"Fluid delivered: "..format(progress.moved),nil,colors.lightGray,true)
     else text(ox+1,top+3,W,service.last,nil,colors.lightGray,true) end
    end
   end
@@ -203,15 +242,7 @@ local function queueWorker()
   if Q.paused or #Q.jobs==0 then os.pullEvent("fluid_queue_changed") else
    local job=Q.jobs[1];S.busy=true;os.queueEvent("fluid_status")
    local ok,err=pcall(function()
-    if not job.request then
-     job.attempt=(job.attempt or 0)+1
-     job.request={id="monitor:"..os.getComputerID()..":"..job.id..":"..job.attempt,amount=job.remaining};saveQueue()
-    end
-    local result=service.transfer(os.getComputerID(),job.request.id,{target=job.target,fluid=job.fluid,amount=job.request.amount},true)
-    job.remaining=job.remaining-result.moved;job.request=nil
-    if job.remaining==0 then table.remove(Q.jobs,1)
-    else Q.paused=true;Q.reason=result.error or "Buffer rejected fluid; check destination capacity" end
-    saveQueue()
+    if basins.tick(job,saveQueue) then table.remove(Q.jobs,1);saveQueue() end
    end)
    if not ok then Q.paused=true;Q.reason=tostring(err);saveQueue() end
    S.busy=false;os.queueEvent("fluid_status");sleep(.2)
@@ -227,8 +258,9 @@ local function stockWorker()
   if not ready then service.last=reason end
   if ready and not Q.paused and #Q.jobs==0 and not service.fault and #service.uncertain()==0 then
    for _,fluid in ipairs(S.stock) do
-    local amount=N.volume("Block",fluid.name)
-    if amount and auto[fluid.name] and (c.outputs or {}).Block and fluid.amount-service.reserved(fluid.name)-(c.keepMb or 0)>=amount*64 then
+    local rule=blockRules[fluid.name]
+    local amount=rule and rule.amount
+    if amount and auto[fluid.name] and #(c.basins or {})>0 and c.blockOutputChest and fluid.amount-service.reserved(fluid.name)-(c.keepMb or 0)>=amount*64 then
      enqueue(fluid.name,"Block",64,true);break
     end
    end
@@ -260,5 +292,5 @@ local function uiLoop()
 end
 connect();render()
 print("Liquid Resource Monitor v"..VERSION.." | Computer "..os.getComputerID())
-print("Only assigned monitors, fluid sources and output buffers are controlled.")
+print("Only assigned monitors, fluid sources and managed block basins are controlled.")
 parallel.waitForAny(uiLoop,networkLoop,queueWorker,stockWorker)

@@ -3,7 +3,7 @@ import sys
 from lupa.lua52 import LuaRuntime
 R=Path(__file__).resolve().parents[1]
 l=LuaRuntime(unpack_returned_tuples=True)
-for name in ['fluid_network','fluid_client','fluid_service','fluid_monitor','network_setup']:l.globals()[name+'Source']=(R/(name+'.lua')).read_text()
+for name in ['fluid_network','fluid_client','fluid_service','fluid_monitor','network_setup','basin_casting','basin_casting_data']:l.globals()[name+'Source']=(R/(name+'.lua')).read_text()
 l.execute(r'''
  now=100;files={};calls=0;pushes={};balances={a=100000,b=1000};limit=1000000;inject=false;epoch=100000
  os={clock=function() return now end,epoch=function() return epoch end,getComputerID=function() return 20 end,queueEvent=function() end}
@@ -29,7 +29,7 @@ l.execute(r'''
   if method=='isWireless' then return false end
   error(method)
  end,hasType=function() return true end}
- config={role='fluid',modem='left',monitors={'fluid_monitor'},sources={'a','b'},destinations={'gear_table'},outputs={Ingot='ingot_buffer',Block='block_buffer'},clients={10},keepMb=0}
+ config={role='fluid',modem='left',monitors={'fluid_monitor'},sources={'a','b'},destinations={'gear_table'},basins={'ingot_buffer','block_buffer'},clients={10},keepMb=0}
  Network=assert(load(fluid_networkSource))();factory=assert(load(fluid_serviceSource))();service=factory('root',config)
  local function request(id,method,args,sender) return service.handle(sender or 10,{version=1,id='10:100000:'..id,method=method,args=args}) end
  assert(not pcall(request,1,'stock',{},11))
@@ -67,7 +67,7 @@ l.execute(r'''
  for i=11,80 do assert(request(i,'pour',{target='gear_table',fluid='productivemetalworks:molten_iron',amount=1}).moved==1) end
  before=calls;assert(not pcall(request,4,'pour',{target='gear_table',fluid='productivemetalworks:molten_iron',amount=90}) and calls==before)
  -- Reject shared destinations and corrupt pending journal before touching fluids.
- local bad={sources={'a'},destinations={'gear_table'},outputs={Block='gear_table'},clients={10}}
+ local bad={sources={'a'},destinations={'gear_table'},basins={'gear_table'},clients={10}}
  assert(not pcall(factory,'bad',bad))
  files['broken/fluid_transfers.txt.pending']='garbage';assert(not pcall(factory,'broken',config))
  assert(Network.volume('Block','productivemetalworks:molten_iron')==810)
@@ -112,9 +112,10 @@ l.execute(r'''
 print('PASS client: pinned server/request matching, separate monitors/stations, stock/reservation/pour RPC and timeout without duplicate resend')
 
 monitor=(R/'fluid_monitor.lua').read_text()
-l.globals().appSource=monitor[:monitor.rindex('connect();render()')]+"\nreturn {S=S,Q=Q,service=service,connect=connect,render=render,enqueue=enqueue,worker=queueWorker,stockWorker=stockWorker}"
+l.globals().appSource=monitor[:monitor.rindex('connect();render()')]+"\nreturn {S=S,Q=Q,service=service,connect=connect,render=render,enqueue=enqueue,worker=queueWorker,stockWorker=stockWorker,cancel=cancelJob}"
 l.execute(r"""
  os.getComputerID=function() return 20 end
+ os.epoch=function() return now*1000 end
  os.pullEvent=function() return coroutine.yield('event') end
  sleep=function() coroutine.yield('sleep') end
  shell={getRunningProgram=function() return 'root/fluid_monitor.lua' end}
@@ -126,40 +127,113 @@ l.execute(r"""
  blit=function(text,fg,bg) assert(#text==#fg and #fg==#bg and x+#text-1<=60);writes=writes+1 end}
  peripheral.wrap=function() return mon end
  dofile=function(path)
-  if path:find('fluid_network.lua',1,true) then return assert(load(fluid_networkSource))() end
-  if path:find('fluid_service.lua',1,true) then return assert(load(fluid_serviceSource))() end
+  for _,name in ipairs({'fluid_network','fluid_service','basin_casting','basin_casting_data'}) do if path:find(name..'.lua',1,true) then return assert(load(_G[name..'Source']))() end end
   error(path)
  end
+ config.basins={'basin1','basin2'};config.outputs=nil;config.blockOutputChest='block_chest'
  files['root/fluid_network.txt']=textutils.serialize(config)
+ B={basin1={fluid=0},basin2={fluid=0}};blocksOut=0;blocked=false;extractError=false;neverCool=false
+ local originalCall=peripheral.call
+ peripheral.call=function(name,method,...)
+  if B[name] then
+   local b=B[name]
+   if b.ready and now>=b.ready and not neverCool then b.fluid=0;b.item={name='minecraft:iron_block',count=1};b.ready=nil end
+   if method=='list' then return b.item and {[1]=b.item} or {} end
+   if method=='tanks' then return b.fluid>0 and {{name=b.name or 'productivemetalworks:molten_iron',amount=b.fluid}} or {} end
+   if method=='pushItems' then
+    assert(select(1,...)=='block_chest')
+    if extractError then error('uncertain extraction') end
+    if blocked then return 0 end
+    assert(b.item);b.item=nil;blocksOut=blocksOut+1;return 1
+   end
+  end
+  if method=='pushFluid' then
+   local target,amount,fluid=...
+   local moved=originalCall(name,method,...)
+   if B[target] then local b=B[target];b.fluid=b.fluid+moved;b.name=fluid;if b.fluid==810 then b.ready=now+3 end end
+   return moved
+  end
+  return originalCall(name,method,...)
+ end
  App=assert(load(appSource))();App.connect();App.S.fluid='productivemetalworks:molten_iron';App.S.stock={{name=App.S.fluid,amount=10000}}
  for _,screen in ipairs({'welcome','main','resources','automatic','material','review','queue','utilities','acknowledge'}) do App.S.screen=screen;App.render() end
  App.S.screen='main';App.render();local beforeWrites=writes;App.render();assert(writes==beforeWrites)
  App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
- App.enqueue(App.S.fluid,'Ingot',2,false);assert(#App.Q.jobs==1 and App.Q.jobs[1].remaining==180)
- limit=50
- local worker=coroutine.create(App.worker);local ok,e=coroutine.resume(worker);assert(ok,e)
- assert(App.Q.paused and App.Q.jobs[1].remaining==80 and App.Q.jobs[1].request==nil)
- App.Q.paused=false;ok,e=coroutine.resume(worker);assert(ok,e);assert(#App.Q.jobs==0)
- -- Restart after physical success but before queue checkpoint uses the saved receipt.
- local requestId='monitor:20:2:1'
- limit=1000000
- local result=App.service.transfer(20,requestId,{target='ingot_buffer',fluid=App.S.fluid,amount=180},true);assert(result.moved==180)
- files['root/fluid_jobs.txt']=textutils.serialize({nextId=3,paused=false,jobs={{id=2,fluid=App.S.fluid,shape='Ingot',quantity=2,remaining=180,total=180,target='ingot_buffer',request={id=requestId,amount=180}}}})
- local before=calls
- App=assert(load(appSource))();App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
- worker=coroutine.create(App.worker);ok,e=coroutine.resume(worker);assert(ok,e);assert(#App.Q.jobs==0 and calls==before)
- -- Automatic blocks wait for Gear heartbeat and preserve its demand.
+ assert(not pcall(App.enqueue,App.S.fluid,'Ingot',1,false))
+ App.enqueue(App.S.fluid,'Block',4,false);assert(#App.Q.jobs==1 and App.Q.jobs[1].remaining==4*810)
+ local worker=coroutine.create(App.worker)
+ local function step(n)
+  for i=1,n do now=now+.25;local ok,e=coroutine.resume(worker);assert(ok,e);if #App.Q.jobs==0 or App.Q.paused then break end end
+ end
+ step(1);assert(App.Q.jobs[1].units.basin1 and App.Q.jobs[1].units.basin2)
+ step(1);assert(B.basin1.fluid==810 and B.basin2.fluid==810 and blocksOut==0)
+ step(60);assert(#App.Q.jobs==0 and blocksOut==4 and not App.Q.paused)
+ -- Cancel before a pour removes unstarted basin allocations without consuming fluid.
+ App.enqueue(App.S.fluid,'Block',3,false);step(1);local untouched=calls;App.cancel(1);assert(#App.Q.jobs==0 and calls==untouched)
+ -- A full output chest pauses extraction, then Resume does not pour another block.
+ App.enqueue(App.S.fluid,'Block',1,false);blocked=true;step(30)
+ assert(App.Q.paused and App.Q.jobs[1].units.basin1.phase=='waiting_output' and B.basin1.item)
+ local before=calls;App.Q.paused=false;blocked=false;step(2);assert(#App.Q.jobs==0 and blocksOut==5 and calls==before)
+ -- Restart during cooling reuses the persistent basin unit without another pour.
+ App.enqueue(App.S.fluid,'Block',1,false);step(2);assert(B.basin1.fluid==810)
+ before=calls;now=now+4;App=assert(load(appSource))();App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
+ worker=coroutine.create(App.worker);step(2);assert(#App.Q.jobs==0 and blocksOut==6 and calls==before)
+ -- Cancelling waiting quantity preserves active basin casts and their output.
+ App.S.fluid='productivemetalworks:molten_iron'
+ App.enqueue(App.S.fluid,'Block',6,false);step(2)
+ local job=App.Q.jobs[1];assert(job.units.basin1 and job.units.basin2)
+ App.cancel(1);assert(job.quantity==2 and job.remaining==2*810)
+ step(40);assert(#App.Q.jobs==0 and blocksOut==8)
+ -- Automatic batches remain blocked by stale/missing Gear heartbeats and demand.
+ balances.a=200000
  files['root/fluid_auto.txt']=textutils.serialize({['productivemetalworks:molten_iron']=true})
  App=assert(load(appSource))()
- local poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e);assert(#App.Q.jobs==0)
+ local poll=coroutine.create(App.stockWorker);local ok,e=coroutine.resume(poll);assert(ok,e);assert(#App.Q.jobs==0)
  App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={['productivemetalworks:molten_iron']=900000}}})
  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e);assert(#App.Q.jobs==0)
  App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
  poll=coroutine.create(App.stockWorker);ok,e=coroutine.resume(poll);assert(ok,e)
- assert(#App.Q.jobs==1 and App.Q.jobs[1].automatic and App.Q.jobs[1].remaining==64*810)
+ assert(#App.Q.jobs==1 and App.Q.jobs[1].automatic and App.Q.jobs[1].mode=='basin_blocks' and App.Q.jobs[1].remaining==64*810)
 """)
-print('PASS monitor: every screen renders within bounds, unchanged frames skip writes, partial buffer deliveries resume remaining mB, restart does not re-pour, and automatic 64-block batches protect Gear demand/heartbeats')
+print('PASS managed basins: block-only UI, two overlapping cooling cycles, exact block output collection, blocked-output Resume without re-pour, restart during cooling, cancellation protection and automatic Gear-reserved batches')
 
+l.execute(r"""
+ local manager=assert(load(basin_castingSource))()(config,App.service)
+ local function fresh(id)
+  B.basin1={fluid=0};B.basin2={fluid=0};balances.b=100000;neverCool=false;extractError=false;blocked=false;limit=1000000
+  App.service.handle(10,{version=1,id='hold',method='reserve',args={demand={}}})
+  return {id=id,mode='basin_blocks',fluid='productivemetalworks:molten_iron',shape='Block',quantity=1,amount=810,outputs={'minecraft:iron_block'},completed=0,remaining=810,units={}}
+ end
+ local job=fresh(100);local snapshot
+ local function save() snapshot=textutils.serialize(job) end
+ manager.tick(job,save);limit=100
+ local ok,e=pcall(manager.tick,job,save);assert(not ok and tostring(e):find('Partial',1,true) and B.basin1.fluid==200)
+ limit=1000000;local before=calls;manager.tick(job,save);assert(calls==before+1 and B.basin1.fluid==810 and pushes[#pushes].amount==610)
+ now=now+3.1;assert(manager.tick(job,save) and job.completed==1)
+ job=fresh(101);manager.tick(job,save);manager.tick(job,save)
+ B.basin1.fluid=0;B.basin1.ready=nil;B.basin1.item={name='minecraft:gold_block',count=1};before=calls
+ ok,e=pcall(manager.tick,job,save);assert(not ok and tostring(e):find('Wrong block at basin1',1,true) and calls==before)
+ job=fresh(102);neverCool=true;manager.tick(job,save);manager.tick(job,save);before=calls;now=now+16
+ ok,e=pcall(manager.tick,job,save);assert(not ok and tostring(e):find('15 seconds',1,true) and calls==before)
+ job=fresh(103);manager.tick(job,save);manager.tick(job,save);now=now+3.1;extractError=true
+ ok,e=pcall(manager.tick,job,save);assert(not ok and job.units.basin1.phase=='delivery_started')
+ extractError=false;before=calls;ok,e=pcall(manager.tick,job,save);assert(not ok and tostring(e):find('Uncertain item extraction',1,true) and calls==before)
+ manager.resolve(job,save,nil);assert(job.units.basin1.phase=='waiting_output');assert(manager.tick(job,save))
+ -- Physical extraction succeeded, but a simulated checkpoint failure retains the extraction intent.
+ job=fresh(104);manager.tick(job,save);manager.tick(job,save);now=now+3.1
+ local function failAfterExtraction() if job.completed==1 then error('disk checkpoint failed') end;snapshot=textutils.serialize(job) end
+ ok,e=pcall(manager.tick,job,failAfterExtraction);assert(not ok)
+ job=textutils.unserialize(snapshot);before=calls;local outBefore=blocksOut
+ ok,e=pcall(manager.tick,job,save);assert(not ok and tostring(e):find('Uncertain item extraction',1,true))
+ manager.resolve(job,save,true);assert(job.completed==1 and calls==before and blocksOut==outBefore)
+ -- Repeated rejected pours are bounded, even if Resume is requested repeatedly.
+ job=fresh(105);limit=0;manager.tick(job,save)
+ for i=1,8 do assert(not pcall(manager.tick,job,save)) end
+ before=calls;ok,e=pcall(manager.tick,job,save)
+ assert(not ok and tostring(e):find('Pour limit reached',1,true) and calls==before)
+ limit=1000000
+""")
+print('PASS basin recovery: exact partial remainder, wrong block stops, cooling timeout without top-ups, uncertain extraction revalidation, explicit delivered reconciliation and eight-attempt pour bound')
 l.execute(r"""
  -- Console-style setup saves a per-computer role without touching other state.
  local nc={role='gear',modem='left',monitors={'gear_monitor'},serverId=20,clients={},sources={},destinations={}}
@@ -180,6 +254,44 @@ l.execute(r"""
  assert(not pcall(Network.load,'root'));files['root/fluid_network.txt.pending']=nil
 """)
 print('PASS Network Setup: paged console navigation/save, preserved assignments, pending configuration recovery and corrupt-config rejection')
+
+setup=(R/'network_setup.lua').read_text()
+l.globals().sourcePicker=setup[:setup.rindex('while true do')]+"\nreturn {choose=choose,entries=entries}"
+l.execute(r"""
+ local names={'functionalstorage:storage_controller_0','functionalstorage:chest_0','productivemetalworks:casting_0','othermod:tank_0','back'}
+ peripheral.getNames=function() return names end
+ peripheral.getMethods=function(name) if name=='functionalstorage:chest_0' then return {'list','pushItems'} end;return {'tanks','pushFluid'} end
+ peripheral.getType=function(name) if name=='back' then return 'fluid_storage','functionalstorage:fluid_drawer' end;return 'fluid_storage' end
+ local picker=assert(load(sourcePicker))()
+ picker.choose('sources','fluid',true)
+ local labels={};for _,entry in ipairs(picker.entries()) do labels[entry.label]=true end
+ assert(labels['[ ] functionalstorage:storage_controller_0'] and labels['[ ] back'])
+ assert(not labels['[ ] productivemetalworks:casting_0'] and not labels['[ ] othermod:tank_0'] and not labels['[ ] functionalstorage:chest_0'])
+ assert(labels['Clear source selections'])
+ picker.choose('destinations','fluid',true)
+ labels={};for _,entry in ipairs(picker.entries()) do labels[entry.label]=true end
+ assert(labels['[ ] productivemetalworks:casting_0'] and labels['[ ] othermod:tank_0'])
+""")
+print('PASS source picker: only Functional Storage fluid-capable devices, local-side type recognition, clear old selections and unchanged casting destination choices')
+
+l.execute(r"""
+ -- Basins and block output are assigned independently, with Gear stations excluded.
+ files['root/fluid_network.txt']=textutils.serialize({role='fluid',modem='left',monitors={'fluid_monitor'},clients={10},sources={'functionalstorage:storage_controller_0'},destinations={'productivemetalworks:casting_0'},basins={}})
+ os.getComputerID=function() return 20 end
+ peripheral.getNames=function() return {'productivemetalworks:casting_0','productivemetalworks:casting_42','sophisticatedstorage:chest_9','functionalstorage:storage_controller_0'} end
+ peripheral.getMethods=function(name)
+  if name:find('casting_',1,true) then return {'list','tanks','pushItems','pushFluid'} end
+  if name:find('chest_',1,true) then return {'list','size','pushItems'} end
+  return {'tanks','pushFluid'}
+ end
+ peripheral.hasType=function() return false end
+ local picker=assert(load(sourcePicker))();picker.choose('basins','basin',true)
+ local rows=picker.entries();assert(#rows==2 and rows[2].label=='[ ] productivemetalworks:casting_42');rows[2].action()
+ picker.choose('blockOutputChest','inventory',false);rows=picker.entries();assert(#rows==1 and rows[1].label=='[ ] sophisticatedstorage:chest_9');rows[1].action()
+ rows=picker.entries();rows[12].action()
+ local saved=textutils.unserialize(files['root/fluid_network.txt']);assert(saved.basins[1]=='productivemetalworks:casting_42' and saved.blockOutputChest=='sophisticatedstorage:chest_9' and saved.outputs==nil)
+""")
+print('PASS managed-basin setup: Gear destinations excluded, multiple-basin selection, inventory-only output chest and saved basin-only assignments')
 for p in R.glob('*.lua'):
  ok,err=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,err)
 print('PASS all scripts compile in Lua 5.2')

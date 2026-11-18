@@ -176,3 +176,15 @@ existing queue formats remain valid. Preview planning uses cached stock only.
 - Updater 1.5.0 distributes all five new files and preserves local network state.
 - Local state: `fluid_network.txt`, `fluid_jobs.txt`, `fluid_auto.txt`, and
   `fluid_transfers.txt`, each potentially with a recoverable `.pending` save.
+
+## Managed whole-block basins
+
+- Liquid Resource Monitor 1.1.0 adds `basin_casting.lua` and
+  `basin_casting_data.lua` (1.0.0 each) to its dependencies.
+- Network Setup, Network Settings and Fluid Service are 1.1.0; updater 1.6.0
+  distributes both new helpers. Gear UI's independent version stays 1.1.0.
+- Local settings use `basins` (list) and `blockOutputChest` (inventory name),
+  replacing the retired `outputs.Ingot`/`outputs.Block` buffer assignments.
+- Queue entries use `mode="basin_blocks"`, completed block counts, pinned recipe
+  amount/output IDs and per-basin pour/cooling/extraction checkpoints. Older buffer
+  entries require cancellation/inspection; they are never migrated into new pours.

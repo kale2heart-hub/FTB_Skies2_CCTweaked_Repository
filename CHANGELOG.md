@@ -5,6 +5,45 @@ internal development labels have been consolidated into the entries below;
 1.1.0 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Liquid Resource Monitor 1.1.0 - Managed whole-block basins
+
+Date: 2026-11-17
+
+- Local casting now creates whole blocks only; removed ingot selection and
+  intermediate buffer transfers. Gear's separate casting routes remain available.
+- Assign multiple managed basins and a block output chest in Network Setup 1.1.0.
+  Basins cannot overlap Gear destinations or fluid sources; old buffer assignments
+  are retired without automatically converting tanks into basins.
+- Each basin receives one block's verified fluid volume, cools independently,
+  validates its finished block ID, and transfers it to the output chest.
+- Added 68 cast-free block profiles from the installed FTB Skies 2 1.25.3 recipes.
+- Persistent per-basin states protect against repeat pours after restart. Known
+  partials request only the measured remainder; blocked output retries extraction.
+  Cooling times out after fifteen seconds and pours are bounded to eight attempts.
+- Cancel waiting blocks preserves already-poured basin work; unstarted allocations
+  are removed. Utilities supports explicit revalidation/retry/delivered confirmation.
+- Automatic 64-block batches retain Gear reservations and the optional extra reserve.
+- Legacy buffer queue entries pause for cancellation/inspection instead of being
+  replayed against newly assigned basins. Existing Gear state is preserved.
+- Shared Fluid Service/Network Settings are 1.1.0; updater 1.6.0 includes the new
+  basin_casting.lua and basin_casting_data.lua helpers (both 1.0.0).
+- Local tests pass for multi-basin cooling, verified collection, partial/restarted
+  jobs, blocked/uncertain output, cancellation, time/attempt bounds and setup.
+  In-game basin commissioning remains to be tested.
+
+## Fluid Network Setup 1.0.2 - Functional Storage sources
+
+- Fluid source selection now lists only Functional Storage devices exposing tanks
+  and pushFluid, including locally attached devices identified by peripheral type.
+- Saving validates selected sources. A clear-selections action lets old source
+  assignments be replaced. Casting destination and buffer selectors are unchanged.
+
+## Fluid Network Setup 1.0.1 - Clearer computer ID labels
+
+- Renamed partner-ID fields to Fluid: Computer ID and Gear: Computer ID.
+  Labels identify the computer whose ID must be entered; saved values and
+  connection behavior remain unchanged.
+
 ## Gear UI 1.1.0 / Liquid Resource Monitor 1.0.0 - Shared wired fluid network
 
 Date: 2026-11-17

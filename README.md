@@ -298,67 +298,89 @@ any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
 
-## Shared fluid network (Gear UI 1.1.0 / Liquid Resource Monitor 1.0.0)
+## Shared fluid network (Gear UI 1.1.0 / Liquid Resource Monitor 1.1.0)
 
-The two computers share a wired modem network. The Liquid Resource Monitor owns
-fluid storage and all transfers out of it; Gear UI requests exact fluid IDs and
-mB amounts from that computer. Gear tables remain under Gear UI control, while
-monitor casting sends measured fluid batches into separate ingot/block buffers
-feeding the monitor's existing casting machinery. The new monitor replaces the
-original script; it does not automate output collection from those separate
-casting machines. Its completion indicator means fluid delivered to the buffer.
+The two computers share a wired modem network. Liquid Resource Monitor owns the
+Functional Storage fluid supply and serializes transfers. Gear UI requests exact
+fluid IDs/mB for its own casting stations. The Fluid Monitor's own casting is
+**whole blocks only**, poured directly into one or more exclusively assigned
+Productive Metalworks basins. It waits for cooling, checks the finished block,
+and collects it into a dedicated output chest.
 
 ### One-time setup
 
-1. Stop the original liquid monitor script and Gear UI before joining the cables.
+1. Stop the original monitor script and Gear UI before joining the cables.
    Install the updated suite on both computers, then join their wired networks.
-2. Open **Fluid Network Setup** in Control Center's Console Scripts on each
-   computer. Its header shows that computer's ID. Select the local wired modem.
-3. On the fluid computer choose role **fluid**, assign only its monitors and fluid
-   storage controller(s), and set the Gear computer ID. Select the allowed Gear
-   casting destinations: the assigned basin and casting tables used by Gear UI.
-   With the current layout that is casting_0 and casting_2 through casting_41.
-   Include casting_1 only if the manual Casting Test should be allowed too.
-4. Assign the fluid monitor's **separate ingot and block buffer tanks**. These
-   must not be Gear tables or fluid sources. No destinations are auto-selected.
-   Select a storage controller once; do not also select its attached drawers or
-   another alias for the same inventory, which would count the fluid twice.
+2. Open **Fluid Network Setup** from Control Center's Console Scripts on both
+   computers. The header shows the current computer ID. Select the local wired modem.
+3. On the fluid computer choose role **fluid**, assign only its monitors and
+   Functional Storage fluid controllers/drawers, and enter **Gear: Computer ID**.
+   Select the allowed Gear destinations: Gear's basin and assigned casting tables
+   (currently casting_0 and casting_2 through casting_41). Include casting_1 only
+   if the manual Casting Test should be allowed to use it.
+4. Select **Managed block basins** for the Fluid Monitor. Use additional physical
+   basins, separate from Gear's casting_0 and tables. The selector excludes
+   assigned Gear destinations. Productive Metalworks exposes tables and basins
+   with the same casting peripheral type: select the devices that are physically
+   basins. Assign **Block output chest** to collect the completed blocks.
 5. On the Gear computer choose role **gear**, assign its in/out/dev monitors
-   (up to three), and set the Fluid Monitor computer ID. Save on both computers.
-6. Start **Liquid Resource Monitor** from Applications first, then Gear UI.
-   Gear checks for overlapping monitor/buffer assignments before drawing.
+   (up to three), and enter **Fluid: Computer ID**. Save on both computers.
+6. Start **Liquid Resource Monitor** first, then Gear UI. Gear checks for overlapping
+   monitor/basin assignments before drawing.
 
-Settings are saved locally in `fluid_network.txt`; updates do not replace it.
-Before setup, Gear UI retains its existing standalone behavior. After setup,
-Gear monitor discovery is disabled, and all Gear casting/recovery fluid requests
-use the shared service. Configuring the fluid role prevents launching Gear UI on
-that computer. Changes to station names require updating the server's destination
-allowlist in Network Setup as well as the existing Gear station bindings.
+Select each storage controller once; do not also select its linked drawers or
+another alias for the same storage, which would double-count available fluid.
+Settings remain in `fluid_network.txt` and survive updates. Changes require an
+application restart. Without shared-network setup, Gear retains standalone behavior.
+After setup, Gear monitor discovery is disabled and casting/recovery fluid reads
+and pours go through the fluid server. The fluid role prevents launching Gear UI
+on that computer. Keep the original uncoordinated monitor script stopped.
 
-### Fluid Monitor workflow
+### Upgrade from the buffer-based Fluid Monitor
 
-- Welcome -> Main Menu -> Resources -> fluid -> Ingot/Block and quantity -> Review
-  -> Add to Queue. Stock is listed alphabetically, with available amounts.
-- Queue lets the player cancel jobs and resume known partial buffer deliveries;
-  only the remaining mB are sent. A currently running transfer cannot be cancelled.
-- Automatic Casting toggles each exact fluid ID. It queues 64-block batches using
-  the same material-specific volumes as the Gear casting rules, preserving Gear's
-  queued demand and the optional extra reserve configured in Network Setup.
-- Automatic and manual monitor casting wait for a fresh Gear queue heartbeat.
-  If Gear UI stops or disconnects for over 15 seconds, local casting pauses rather
-  than consuming fluid promised to Gear jobs. Start Gear UI to resume heartbeats;
-  paused manual jobs may then be resumed on the Queue screen.
-- Utilities reports uncertain transfers. Inspect the named destination and affected
-  jobs before confirming acknowledgment. This clears the service lock, without
-  repeating a transfer. Cancel an affected monitor job if its outcome is uncertain.
+Run Network Setup on the fluid computer, assign **Managed block basins** and
+**Block output chest**, save, and restart Liquid Resource Monitor. Old ingot/block
+buffer assignments are ignored, not converted into basins. Legacy buffer jobs
+pause with an explanation; cancel them and inspect their old destinations before
+queuing new block jobs. Existing Gear stations, queues and cast records are not reset.
 
-Transfers are serialized by the service. Validated request receipts survive
-restarts; duplicate requests return the prior measured result. Expired receipts
-are rejected instead of replayed. A client timeout never automatically resends
-fluid, and uncertain physical transfers block further pours for inspection.
-Keep the original uncoordinated monitor script stopped: it bypasses this service.
+### Whole-block workflow
 
-The monitor uses Gear-style colors, welcome/home navigation, two-row buttons,
-quantity/review/queue controls, a muted version footer and cached monitor frames.
-The shared network adapter also applies to Gear's bounded recovery and manual
-Casting Test. Existing cast installation/availability files are not reset.
+- Resources -> fluid -> block quantity (1-64) -> Review -> Add to Queue.
+  Ingot casting has been removed from the Fluid Monitor. Gear still handles its
+  own equipment, parts and Other casting routes.
+- Each idle basin receives exactly one block's recipe volume. Multiple basins
+  cool concurrently. Only verified output IDs from the installed pack's 68
+  cast-free whole-block recipes are accepted; unknown fluids cannot be queued.
+- After at least three seconds, basins are checked for completion. Completion
+  that takes longer is polled, with a fifteen-second cooling timeout. The
+  monitor never adds speculative top-up fluid to a stalled basin.
+- Completed blocks are moved into the output chest. A full/filtered chest pauses
+  the job; after making room, Resume retries extraction without pouring again.
+- Cancelling removes waiting blocks. Basins already poured keep their work and
+  are collected before that job ends; allocations not yet poured are cancelled.
+- Known partial pours pause and retain their measured amount. Resume checks the
+  actual basin contents, then requests only the exact remaining mB. Pours are
+  limited to eight attempts per block; unexpected fluid/output pauses for inspection.
+- Utilities offers revalidation, explicit retry of inspected empty basins, or
+  confirmation that an empty basin's block was already delivered. These choices
+  resolve uncertain extraction/transfer states without silently guessing an outcome.
+
+### Automatic casting and Gear fluid requests
+
+Automatic Casting toggles each exact supported fluid. It queues 64 whole blocks
+when enough unreserved fluid exists. Gear queue demand and an optional per-fluid
+extra reserve are protected. Local block pouring waits for a fresh Gear heartbeat;
+after fifteen seconds without one, it cannot consume Gear's reserved supply.
+Gear UI continues its heartbeat on Welcome. Restart Gear if necessary, then Resume
+paused local jobs. Blocks already cooling can still be collected.
+
+The service validates pinned computer IDs and assigned destinations, serializes
+pours, and persists bounded receipts and sequence watermarks. Duplicate requests
+return their measured result. Expired receipts are rejected, and client timeouts
+never automatically resend fluid. Uncertain physical transfers require inspection.
+The adapter also serves Gear's bounded recovery and manual Casting Test.
+
+The Fluid Monitor uses welcome/home navigation, cached mirrored displays,
+alphabetic stock with quantities, review/queue controls, progress and a muted version
+footer. Its block completion indicator now means a verified block was collected.
