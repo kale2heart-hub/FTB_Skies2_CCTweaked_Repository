@@ -1,7 +1,7 @@
--- @crafting-center {"version":"1.0.3","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.0.4","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Live casting and chest-delivery queues, including Gear part kits for manual assembly.
-local VERSION="1.0.3"
+local VERSION="1.0.4"
 local ROOT = fs.getDir(shell.getRunningProgram())
 local C = dofile(fs.combine(ROOT, "gear_config.lua"))
 local Cast=dofile(fs.combine(ROOT,"cast_tracking.lua"))(ROOT,C)
@@ -1771,7 +1771,7 @@ print("Leave each correct cast installed; do not share stations between cast typ
 local function uiLoop()
 local timer=os.startTimer(C.pollSeconds)
 local pulseTimer=os.startTimer(0.2)
-local statsTimer=os.startTimer(3)
+local statsTimer=os.startTimer(5)
 while true do
   local event,name,x,y=os.pullEvent()
   if event=="monitor_touch" then
@@ -1796,7 +1796,7 @@ while true do
     render()
   elseif event=="timer" and name==statsTimer then
     if advanceStatPage() then render() end
-    statsTimer=os.startTimer(3)
+    statsTimer=os.startTimer(5)
   elseif event=="timer" and name==pulseTimer then
     local idle=os.clock()-S.lastInteraction
     local pending=#Q.batches>0 or Q.active or S.busy

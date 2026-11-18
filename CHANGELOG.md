@@ -2,8 +2,13 @@
 
 Gear UI history is grouped under the current 1.0.x version scheme. Earlier
 internal development labels have been consolidated into the entries below;
-1.0.3 is the current Gear UI version. Supporting scripts retain independent
+1.0.4 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
+
+## Gear UI 1.0.4 - Stat paging interval
+
+- Changed automatic Stats & Traits paging to five seconds per page.
+- Screen touches still pause automatic paging for ten seconds.
 
 ## Gear UI 1.0.3 - Stat paging timer fix
 

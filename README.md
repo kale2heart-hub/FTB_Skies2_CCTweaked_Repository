@@ -293,7 +293,7 @@ parts with unreadable material components and unmapped custom materials show
 unavailable details. The material snapshot must be regenerated when pack data
 changes; live inventory availability remains separate.
 
-Gear UI 2.2.0 cycles through Stats & Traits pages every three seconds. Touching
+Gear UI 1.0.4 cycles through Stats & Traits pages every five seconds. Touching
 any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
