@@ -1,5 +1,5 @@
--- @crafting-center {"version":"1.3.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
-local VERSION="1.3.0"
+-- @crafting-center {"version":"1.3.1","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
+local VERSION="1.3.1"
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -306,7 +306,9 @@ local function uiLoop()
  local timer=os.startTimer(.5)
  while true do
   local event,name,x,y=os.pullEvent()
-  if event=="monitor_touch" then
+  if event=="rednet_message" and N.replyDiscovery(c,name,x,y) then
+    -- Discovery does not grant fluid access.
+  elseif event=="monitor_touch" then
    for _,d in ipairs(displays) do if d.name==name then
     S.lastTouch=os.clock()
     for _,button in ipairs(d.buttons or {}) do if x>=button.x and x<button.x+button.w and y>=button.y and y<button.y+button.h then

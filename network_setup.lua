@@ -1,11 +1,41 @@
--- @crafting-center {"version":"1.3.2","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
+-- @crafting-center {"version":"1.4.0","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
 c.basins=c.basins or {};c.keepMb=c.keepMb or 0
+pcall(N.open,c) -- A configured Setup screen can answer discovery before either app starts.
 local selected,offset,view=1,0,"main"
 local message="Assign devices before joining networks. Computer ID: "..os.getComputerID()
 local choices,field,multiple={},nil,false
+local peers,scanNonce,scanTimer,scanCounter={},nil,nil,0
+local function peerValue() if field=="client" then return c.clients[1] end;return c.serverId end
+local function setPeer(id) if field=="client" then c.clients=id and {id} or {} else c.serverId=id end end
+local function scanPeers(key)
+ field=key;view="computers";selected=1;offset=0;peers={}
+ local current=peerValue()
+ if current~=nil then peers[current]={id=current,label="Computer #"..current,online=false} end
+ for _,name in ipairs(peripheral.getNames()) do
+  local readable=false
+  local listed,list=pcall(peripheral.getMethods,name)
+  if listed then
+   local supported={};for _,method in ipairs(list or {}) do supported[method]=true end
+   readable=supported.getID and supported.getLabel and supported.isOn
+  end
+  local ok,id=false,nil
+  if readable then ok,id=pcall(peripheral.call,name,"getID") end
+  if ok and type(id)=="number" and id~=os.getComputerID() then
+   local labelled,label=pcall(peripheral.call,name,"getLabel")
+   local powered,on=pcall(peripheral.call,name,"isOn")
+   peers[id]={id=id,label=labelled and type(label)=="string" and label or "Computer #"..id,online=true,powered=not powered or on~=false}
+  end
+ end
+ scanCounter=scanCounter+1;scanNonce=tostring(os.getComputerID())..":"..os.epoch("utc")..":"..scanCounter
+ local opened=pcall(N.open,c)
+ if opened then
+  rednet.broadcast({kind="probe",version=1,nonce=scanNonce},N.discoveryProtocol)
+  scanTimer=os.startTimer(2);message="Scanning computers... | Enter selects | R rescans | B back"
+ else scanTimer=nil;message="Select a local wired modem to discover role labels; connected computers are listed" end
+end
 local function has(list,value) for i,x in ipairs(list) do if x==value then return i end end end
 local function toggle(list,value) local i=has(list,value);if i then table.remove(list,i) else list[#list+1]=value end end
 local function methods(name)
@@ -125,6 +155,27 @@ local function save()
 end
 local function entries()
  local present=presentDevices()
+ if view=="computers" then
+  local list={};for _,peer in pairs(peers) do list[#list+1]=peer end
+  local wanted=field=="client" and "gear" or "fluid"
+  table.sort(list,function(a,b)
+   if (a.role==wanted)~=(b.role==wanted) then return a.role==wanted end
+   return a.id<b.id
+  end)
+  local rows={{label="Clear saved computer",action=function() setPeer(nil);view="main";selected=1;offset=0 end}}
+  for _,peer in ipairs(list) do
+   local mismatch=peer.role and peer.role~="standalone" and peer.role~=wanted
+   local label=(peerValue()==peer.id and "[x] " or "[ ] ").."#"..peer.id.." "..peer.label.." ["..(peer.online and (peer.role or "role unknown") or "OFFLINE").."]"
+   if peer.powered==false then label=label.." [POWERED OFF]" end
+   rows[#rows+1]={label=label,fg=not peer.online and colors.red or mismatch and colors.lightGray or nil,action=function()
+    if not peer.online then
+     if peerValue()==peer.id then setPeer(nil);view="main";selected=1;offset=0;message="Offline computer assignment removed" end
+    elseif mismatch then message="Select a "..wanted.." computer; change its role on that computer if needed"
+    else setPeer(peer.id);view="main";selected=1;offset=0;message="Computer selected; select SAVE to apply" end
+   end}
+  end
+  return rows
+ end
  if view=="choose" then
   local rows={}
   if field=="sources" or field=="gearSources" then rows[1]={label="Clear source selections",action=function() c[field]={} end}
@@ -144,7 +195,7 @@ local function entries()
     if multiple then
      if conflict and not has(c[field],name) then message="Device belongs to the other system; remove that assignment first";return end
      c[field]=c[field] or {};toggle(c[field],name)
-    else c[field]=name;view="main";selected=1;offset=0 end
+    else c[field]=name;if field=="modem" then pcall(N.open,c) end;view="main";selected=1;offset=0 end
    end}
   end
   return rows
@@ -156,14 +207,14 @@ local function entries()
  }
  local function add(label,action,deviceKey) rows[#rows+1]={label=label,action=action,deviceKey=deviceKey} end
  if c.role=="gear" then
-  add("Fluid: Computer ID: "..tostring(c.serverId or "unset"),function() input("serverId","Fluid: Computer ID") end)
+  add("Fluid: Computer ID: "..tostring(c.serverId or "unset"),function() scanPeers("serverId") end)
   add("Additional Gear stations: "..#c.destinations,function() choose("destinations","fluid",true) end,"destinations")
   add("Reserve Gear casting_0 through casting_42",function()
    c.destinations={};for i=0,42 do c.destinations[#c.destinations+1]="productivemetalworks:casting_"..i end
    message="Draft Gear range 0-42. Active Station Setup assignments are also announced automatically."
   end)
  elseif c.role=="fluid" then
-  add("Gear: Computer ID: "..tostring(c.clients[1] or "unset"),function() input("client","Gear: Computer ID") end)
+  add("Gear: Computer ID: "..tostring(c.clients[1] or "unset"),function() scanPeers("client") end)
   add("Main fluid storage sources: "..#c.sources,function() choose("sources","fluid",true) end,"sources")
   add("Gear-only fluid storage: "..#c.gearSources,function() choose("gearSources","fluid",true) end,"gearSources")
   add("Default Gear minimum: "..c.gearMinimumDefault.." mB",function() input("gearMinimumDefault","Minimum per fluid (mB)") end)
@@ -197,7 +248,7 @@ local function draw()
  term.setBackgroundColor(colors.black);term.setTextColor(colors.white);term.clear()
  local function line(y,label,bg,fg) term.setCursorPos(1,y);term.setBackgroundColor(bg or colors.black);term.setTextColor(fg or colors.white);term.write((label..string.rep(" ",w)):sub(1,w)) end
  line(1,"FLUID NETWORK SETUP | Computer "..os.getComputerID(),colors.blue)
- line(2,view=="choose" and ("Assign "..field.." | Changes are a draft") or "Separate computers | Explicit device assignments",nil,colors.lightGray)
+ line(2,view=="computers" and "Select partner computer | Labels / IDs / Roles" or view=="choose" and ("Assign "..field.." | Changes are a draft") or "Separate computers | Explicit device assignments",nil,colors.lightGray)
  for i=1,visible do local row=rows[offset+i];if row then line(i+3,(selected==offset+i and "> " or "  ")..row.label,selected==offset+i and colors.blue or colors.black,row.fg) end end
  local wrapped={};local row=""
  for word in message:gmatch("%S+") do
@@ -211,8 +262,17 @@ local function draw()
  return rows,visible
 end
 while true do
- local rows,visible=draw();local event,key=os.pullEvent()
- if event=="key" then
+ local rows,visible=draw();local event,key,payload,protocol=os.pullEvent()
+ if event=="rednet_message" then
+  if not N.replyDiscovery(c,key,payload,protocol) and view=="computers" and protocol==N.discoveryProtocol and type(payload)=="table" and payload.kind=="hello" and payload.version==1 and payload.nonce==scanNonce and payload.id==key and key~=os.getComputerID() then
+   if payload.role=="gear" or payload.role=="fluid" or payload.role=="standalone" then
+    peers[key]={id=key,label=type(payload.label)=="string" and payload.label:sub(1,80) or "Computer #"..key,role=payload.role,online=true,powered=true}
+   end
+  end
+ elseif event=="timer" and key==scanTimer and view=="computers" then
+  local count=0;for _,peer in pairs(peers) do if peer.online then count=count+1 end end
+  message="Found "..count.." computers | R rescans | Enter selects"
+ elseif event=="key" then
   if key==keys.q then return
   elseif key==keys.b or key==keys.backspace then view="main";selected=1;offset=0
   elseif key==keys.up then selected=math.max(1,selected-1)
@@ -220,6 +280,6 @@ while true do
   elseif key==keys.pageUp then selected=math.max(1,selected-visible)
   elseif key==keys.pageDown then selected=math.min(#rows,selected+visible)
   elseif key==keys.enter and rows[selected] then local ok,err=pcall(rows[selected].action);if not ok then message=tostring(err):gsub("^.-:%d+:%s*","") end
-  elseif key==keys.r then if view=="choose" then choose(field,field=="monitors" and "monitor" or field=="modem" and "modem" or "fluid",multiple) end end
+  elseif key==keys.r then if view=="computers" then scanPeers(field) elseif view=="choose" then choose(field,field=="monitors" and "monitor" or field=="modem" and "modem" or "fluid",multiple) end end
  end
 end

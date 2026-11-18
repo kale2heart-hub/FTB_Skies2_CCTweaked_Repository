@@ -212,3 +212,11 @@ existing queue formats remain valid. Preview planning uses cached stock only.
   Gear's local `destinations` remains an optional extra reservation list alongside
   actual station bindings. Fluid saves clear its copied list.
 - All files are already in the updater manifest; no new downloaded files are required.
+
+## Computer discovery
+
+Network Setup/Settings 1.4.0 add read-only partner selection using computer
+getID/getLabel/isOn and the `crafting_center.discovery.v1` probe/hello protocol.
+Gear UI 1.2.1 and Fluid Monitor 1.3.1 answer role probes while running; Setup
+answers them even before the apps are configured. Fluid transfer authorization
+still uses the pinned partner ID and validated device ownership.

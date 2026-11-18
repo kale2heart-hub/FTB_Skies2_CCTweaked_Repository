@@ -1,5 +1,5 @@
--- @crafting-center {"version":"1.3.0","suite":"crafting-center","id":"fluid_network","title":"Fluid Network Settings","launchable":false,"description":"Explicit per-computer wired network assignments."}
-local T={protocol="crafting_center.fluids.v1",source="@fluid_service"}
+-- @crafting-center {"version":"1.4.0","suite":"crafting-center","id":"fluid_network","title":"Fluid Network Settings","launchable":false,"description":"Explicit per-computer wired network assignments."}
+local T={protocol="crafting_center.fluids.v1",source="@fluid_service",discoveryProtocol="crafting_center.discovery.v1"}
 function T.load(root)
  local path=fs.combine(root,"fluid_network.txt")
  if fs.exists(path..".pending") then path=path..".pending" end
@@ -26,6 +26,11 @@ function T.open(c)
  assert(peripheral.hasType(c.modem,"modem"),"Configured wired modem is disconnected")
  assert(peripheral.call(c.modem,"isWireless")==false,"Use a wired modem for the shared fluid network")
  rednet.open(c.modem)
+end
+function T.replyDiscovery(c,sender,message,protocol)
+ if protocol~=T.discoveryProtocol or type(message)~="table" or message.kind~="probe" or type(message.nonce)~="string" or #message.nonce>128 or sender==os.getComputerID() then return false end
+ rednet.send(sender,{kind="hello",version=1,nonce=message.nonce,id=os.getComputerID(),label=os.getComputerLabel and os.getComputerLabel() or nil,role=c.role},T.discoveryProtocol)
+ return true
 end
 function T.label(name)
  return name:gsub("^.*:",""):gsub("^molten_",""):gsub("_"," "):gsub("(%a)([%w]*)",function(a,b) return a:upper()..b end)

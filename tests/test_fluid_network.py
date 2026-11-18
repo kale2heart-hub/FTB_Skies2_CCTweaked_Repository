@@ -520,6 +520,59 @@ l.execute(r"""
  assert(#picker.config.destinations==1 and categories().destinations.fg==nil)
 """)
 print('PASS every device category: red disconnected counts, retained missing modem/stores/basins/stations/chest, multi/single deselection, immediate reconnect updates and warnings clear after removal')
+
+l.execute(r"""
+ -- Real Setup event flow: refresh, role responses, selection and Save without read().
+ os.getComputerID=function() return 10 end;os.getComputerLabel=function() return 'Gear Center' end
+ files['root/fluid_network.txt']=textutils.serialize({role='gear',modem='left',monitors={'monitor_1'},serverId=99})
+ local computers={computer_10={id=10,label='Self'},computer_20={id=20,label='Fluid Center'},computer_30={id=30,label='Other Gear'}}
+ peripheral.getNames=function() return {'computer_30','computer_20','computer_10','left','monitor_1'} end
+ peripheral.getMethods=function(name) return computers[name] and {'getID','getLabel','isOn'} or {} end
+ peripheral.hasType=function(name,kind) return name=='left' and kind=='modem' or name=='monitor_1' and kind=='monitor' end
+ peripheral.call=function(name,method)
+  if method=='isWireless' then return false end
+  local computer=assert(computers[name]);if method=='getID' then return computer.id elseif method=='getLabel' then return computer.label elseif method=='isOn' then return true end;error(method)
+ end
+ local nonces={};local packets={};local timer=0
+ rednet={open=function() end,broadcast=function(message,protocol) assert(protocol==Network.discoveryProtocol);nonces[#nonces+1]=message.nonce;return true end,
+ send=function(id,message,protocol) packets[#packets+1]={id=id,message=message,protocol=protocol};return true end}
+ os.startTimer=function() timer=timer+1;return timer end;os.cancelTimer=function() end
+ read=function() error('Numeric ID entry must not be used') end
+ local events={}
+ local function key(k) events[#events+1]={'key',k} end
+ for i=1,3 do key(keys.down) end;key(keys.enter);key(keys.r)
+ events[#events+1]=function() return {'rednet_message',20,{kind='hello',version=1,id=20,role='fluid',label='STALE',nonce=nonces[1]},Network.discoveryProtocol} end
+ events[#events+1]=function() return {'rednet_message',20,{kind='hello',version=1,id=21,role='fluid',label='WRONG ID',nonce=nonces[2]},Network.discoveryProtocol} end
+ events[#events+1]=function() return {'rednet_message',20,{kind='hello',version=1,id=20,role='fluid',label='Fluid Center',nonce=nonces[2]},Network.discoveryProtocol} end
+ events[#events+1]=function() return {'rednet_message',30,{kind='hello',version=1,id=30,role='gear',label='Other Gear',nonce=nonces[2]},Network.discoveryProtocol} end
+ events[#events+1]=function() return {'timer',timer} end
+ key(keys.down);key(keys.down);key(keys.enter) -- Wrong-role entry stays in picker.
+ key(keys.up);key(keys.enter) -- Matching fluid computer 20.
+ for i=1,6 do key(keys.down) end;key(keys.enter);key(keys.q)
+ os.pullEvent=function() local event=table.remove(events,1);assert(event,'Setup did not exit');if type(event)=='function' then return table.unpack(event()) else return table.unpack(event) end end
+ assert(load(network_setupSource))()
+ local saved=Network.load('root');assert(saved.serverId==20 and #nonces==2 and saved.serverId~=10)
+ assert(Network.replyDiscovery(saved,33,{kind='probe',nonce='test'},Network.discoveryProtocol))
+ assert(packets[#packets].message.role=='gear' and packets[#packets].message.id==10 and packets[#packets].message.label=='Gear Center')
+ assert(not Network.replyDiscovery(saved,10,{kind='probe',nonce='test'},Network.discoveryProtocol))
+""")
+print('PASS computer picker: native labels/IDs, self exclusion, role discovery/ranking, wrong-role rejection, stale/incorrect replies ignored, refresh and persisted selection without numeric input')
+
+setup=(R/'network_setup.lua').read_text()
+l.globals().peerPicker=setup[:setup.rindex('while true do')]+"\nreturn {scan=scanPeers,entries=entries,config=c}"
+l.execute(r"""
+ files['root/fluid_network.txt']=textutils.serialize({role='gear',modem='left',monitors={'monitor_1'},serverId=99})
+ local picker=assert(load(peerPicker))();picker.scan('serverId')
+ local missing
+ for _,row in ipairs(picker.entries()) do if row.label:find('#99',1,true) then missing=row end end
+ assert(missing and missing.fg==colors.red and missing.label:find('[OFFLINE]',1,true));missing.action();assert(picker.config.serverId==nil)
+ files['root/fluid_network.txt']=textutils.serialize({role='fluid',modem='left',monitors={'monitor_1'},serverId=77,clients={}})
+ os.getComputerID=function() return 20 end
+ picker=assert(load(peerPicker))();picker.scan('client')
+ for _,row in ipairs(picker.entries()) do assert(not row.label:find('#77',1,true)) end
+ findAction(picker.entries(),'[ ] #10')();assert(picker.config.clients[1]==10)
+""")
+print('PASS offline computer retained/red/removable, cold native selection, partner roles independent and no numeric input needed')
 for p in R.glob('*.lua'):
  ok,err=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,err)
 print('PASS all scripts compile in Lua 5.2')

@@ -1,7 +1,7 @@
--- @crafting-center {"version":"1.2.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["fluid_network.lua","fluid_client.lua","gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"1.2.1","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["fluid_network.lua","fluid_client.lua","gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Live casting and chest-delivery queues, including Gear part kits for manual assembly.
-local VERSION="1.2.0"
+local VERSION="1.2.1"
 local ROOT = fs.getDir(shell.getRunningProgram())
 local C = dofile(fs.combine(ROOT, "gear_config.lua"))
 local Network=dofile(fs.combine(ROOT,"fluid_network.lua"))
@@ -1823,7 +1823,9 @@ local pulseTimer=os.startTimer(0.2)
 local statsTimer=os.startTimer(5)
 while true do
   local event,name,x,y=os.pullEvent()
-  if event=="monitor_touch" then
+  if event=="rednet_message" and Network.replyDiscovery(networkSettings,name,x,y) then
+    -- Discovery is read-only; no UI or queue action.
+  elseif event=="monitor_touch" then
     for _,d in ipairs(displays) do
       if d.name==name then
         S.lastInteraction=os.clock()

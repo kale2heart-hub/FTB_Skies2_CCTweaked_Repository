@@ -2,8 +2,21 @@
 
 Gear UI core history is grouped under the 1.0.x version scheme. Earlier
 internal development labels have been consolidated into the entries below;
-1.2.0 is the current Gear UI version. Supporting scripts retain independent
+1.2.1 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
+
+## Network Setup 1.4.0 - Select detected computers
+
+- Partner computer fields open a picker instead of requesting typed IDs.
+- Lists readable connected computer labels and IDs, excludes this computer, and
+  supplements them with a two-second read-only Rednet role-discovery scan.
+- Matching Gear/Fluid roles appear first; a known wrong role is not selectable.
+  Saved offline partners remain red and removable; R rescans without changing settings.
+- Setup and both applications answer discovery using Network Settings 1.4.0.
+  Discovery alone grants no fluid access and never changes device assignments.
+- Gear UI is 1.2.1; Fluid Monitor is 1.3.1. Existing pinned IDs remain valid.
+- Local tests cover native discovery, role responses, refresh, stale/mismatched
+  replies, self/wrong-role exclusion, offline clearing and selection/save without read().
 
 ## Network Setup 1.3.2 - All missing devices and category warnings
 

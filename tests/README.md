@@ -24,3 +24,7 @@ pour authority, heartbeat re-registration after restart, and client quarantine.
 
 Missing-device tests exercise red category counts and retained offline entries
 for every single/list device field, deselection, and disconnect/reconnect updates.
+
+Computer-picker checks run the real Setup key/event loop through discovery,
+refresh, role responses, wrong-role rejection and save without numeric input.
+They also cover stale/mismatched replies, self exclusion and offline partner removal.

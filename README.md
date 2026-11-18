@@ -298,7 +298,7 @@ any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
 
-## Shared fluid network (Gear UI 1.2.0 / Liquid Resource Monitor 1.3.0)
+## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.3.1)
 
 The two computers share a wired modem network. Liquid Resource Monitor owns the
 Functional Storage fluid supply and serializes transfers. Gear UI requests exact
@@ -314,7 +314,7 @@ and collects it into a dedicated output chest.
 2. Open **Fluid Network Setup** from Control Center's Console Scripts on both
    computers. The header shows the current computer ID. Select the local wired modem.
 3. On the fluid computer choose role **fluid**, assign only its monitors and
-   **Main fluid storage sources**, and enter **Gear: Computer ID**. Assign the
+   **Main fluid storage sources**, and select **Gear: Computer ID** from the discovered computers. Assign the
    second controller/drawer bank under **Gear-only fluid storage**. Both selectors
    accept Functional Storage fluid devices. Default Gear minimum is 10,000 mB.
 4. Select **Managed block basins** for the Fluid Monitor. Use additional physical
@@ -324,7 +324,7 @@ and collects it into a dedicated output chest.
    with the same casting peripheral type: select the devices that are physically
    basins. Assign **Block output chest** to collect the completed blocks.
 5. On the Gear computer choose role **gear**, assign its in/out/dev monitors
-   (up to three), and enter **Fluid: Computer ID**. Existing Gear Station Setup
+   (up to three), and select **Fluid: Computer ID** from the discovered computers. Existing Gear Station Setup
    bindings, its manual test station and chests are announced automatically.
    **Reserve Gear casting_0 through casting_42** adds that reserved local range;
    other extra stations may be selected under **Additional Gear stations**.
@@ -445,3 +445,17 @@ modems, monitors, both fluid source pools, Gear station reservations, basins and
 the block output chest. Missing assigned devices stay red and can be toggled off.
 The main menu marks affected device categories red with a leading count such as
 `[2 DISCONNECTED]`, which clears when devices reconnect or are deselected.
+
+### Selecting partner computers
+
+Network Setup 1.4.0 opens a computer picker from **Gear: Computer ID** or
+**Fluid: Computer ID**. Choose the partner by its label/ID, then save. It excludes
+this computer and ranks replies from the expected role first. **R** refreshes the
+list; saved offline partners remain red and can be removed. Known wrong-role
+computers are not selectable; unknown roles remain selectable for initial setup.
+
+Set the local wired modem first. Computer peripherals can provide labels and IDs
+without a running application; role discovery requires the other computer's
+updated Setup screen or application to be open with its wired modem configured.
+Discovery never powers on/reboots computers, changes peer settings or grants
+casting access. Existing explicit partner IDs and assignment checks are retained.
