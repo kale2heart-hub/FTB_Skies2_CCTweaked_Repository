@@ -228,3 +228,12 @@ queue through one basin ownership map. `nextPour` persists a global operation
 sequence, with `basin:<computer>:<sequence>:1` request IDs accepted by Fluid Service
 1.3.1 alongside legacy monitor IDs. Queue `failedJobId` identifies the job to
 revalidate; existing per-basin recovery checkpoints are unchanged.
+
+## Pipez feed tank
+
+Fluid Monitor 1.5.0 depends on `pipe_casting.lua` 1.0.0; updater 1.7.0 downloads it.
+Network Setup 1.5.0 saves optional `castingFluidTank`, which selects Pipez mode.
+Fluid Service 1.4.0 owns this target and journals reverse `return:` receipts to main
+storage. Queue entries add `pipe` feed/return/top-up accounting and per-basin
+observations; existing `nextPour` supplies monotonic operation IDs. Basin helper
+1.1.1 accounts for already-fed fluid when calculating unpoured queue reservations.

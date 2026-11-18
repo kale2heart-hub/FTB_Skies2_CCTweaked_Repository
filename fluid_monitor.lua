@@ -1,5 +1,5 @@
--- @crafting-center {"version":"1.4.1","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
-local VERSION="1.4.1"
+-- @crafting-center {"version":"1.5.0","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["pipe_casting.lua","basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
+local VERSION="1.5.0"
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -8,6 +8,7 @@ N.open(c)
 local service=dofile(fs.combine(ROOT,"fluid_service.lua"))(ROOT,c)
 local blockRules=dofile(fs.combine(ROOT,"basin_casting_data.lua"))
 local basins=dofile(fs.combine(ROOT,"basin_casting.lua"))(c,service)
+local pipe=dofile(fs.combine(ROOT,"pipe_casting.lua"))(c,service)
 local S={screen="welcome",page=1,quantity=1,shape="Block",message="",stock={},gearStock={},lastTouch=os.clock()}
 local displays,W,H={},math.huge,math.huge
 local palette={[colors.black]=0x101820,[colors.blue]=0x25394D,[colors.gray]=0x334155,[colors.lightGray]=0xAAB8C5,[colors.cyan]=0x176B80,[colors.green]=0x265F4B,[colors.red]=0x8B3545,[colors.white]=0xF0F5FA}
@@ -79,6 +80,9 @@ end
 local function cancelJob(index)
  assert(not S.busy,"Wait for the current basin operation")
  local job=Q.jobs[index];if not job then return end
+ if job.pipe then
+  job.pipe.cancelled=true;saveQueue();S.message="Waiting feed cancelled; Pipez tank and active basins will finish/recover";os.queueEvent("fluid_queue_changed");return
+ end
  for basin,unit in pairs(job.units or {}) do
   if unit.phase=="partial" and (unit.moved or 0)==0 then job.units[basin]=nil end
  end
@@ -98,7 +102,8 @@ local function resolveBasins(mode)
  service.acknowledge()
  local job=Q.jobs[1]
  for _,candidate in ipairs(Q.jobs) do if candidate.id==Q.failedJobId then job=candidate;break end end
- if job and job.mode=="basin_blocks" then basins.resolve(job,saveQueue,mode) end
+ if job and job.pipe then pipe.resolve(job,saveQueue,mode)
+ elseif job and job.mode=="basin_blocks" then basins.resolve(job,saveQueue,mode) end
  Q.paused=false;Q.reason=nil;saveQueue();os.queueEvent("fluid_queue_changed")
  navigate("utilities")
 end
@@ -201,7 +206,7 @@ local function render()
     line(20,"Managed basins: "..#(c.basins or {}),nil,colors.lightGray)
     local amount=volume()
     line(16,amount and ("Need "..format(amount*S.quantity).." for "..S.quantity.." "..S.shape) or "No verified casting recipe for this fluid",nil,colors.lightGray)
-    if S.screen=="review" then line(18,"Cast, cool and collect into the block output chest",nil,colors.lightGray) end
+    if S.screen=="review" then line(18,c.castingFluidTank and "Casting Fluid Tank > Pipez > basins > output" or "Cast, cool and collect into the block output chest",nil,colors.lightGray) end
     local labels={"Min","-16","-1","Qty:"..S.quantity,"+1","+16","Max"}
     local delta={false,-16,-1,false,1,16,false};local unit=math.floor(W/7)
     for i,label in ipairs(labels) do
@@ -253,7 +258,7 @@ local function render()
    if S.screen~="main" then
     local top=d.h-7;text(ox+1,top,W,string.rep("-",W),nil,colors.gray)
     text(ox+1,top+1,W,"Queue: "..#Q.jobs.." | Basins: "..(function() local n=0;for _,job in ipairs(Q.jobs) do n=n+basins.active(job) end;return n end)().."/"..#(c.basins or {}).." | "..(S.busy and "Managing basins" or Q.paused and "Error - Queue paused" or "Ready"),nil,Q.paused and colors.red or colors.lightGray,true)
-    local cast=basins.progress
+    local cast=c.castingFluidTank and pipe.progress or basins.progress
     local progress=service.progress
     if cast and (cast.phase~="completed" or os.clock()-cast.at<=4) then
      local fill=math.floor(W*math.max(0,math.min(1,cast.moved)))
@@ -286,9 +291,32 @@ local function queueWorker()
  while true do
   if Q.paused or #Q.jobs==0 then os.pullEvent("fluid_queue_changed") else
    S.busy=true;os.queueEvent("fluid_status")
-   local ok,err=pcall(basins.stepQueue,Q.jobs,saveQueue,function()
+   local function token(prefix)
     Q.nextPour=(Q.nextPour or 0)+1
-    return "basin:"..os.getComputerID()..":"..Q.nextPour..":1"
+    return (prefix or "basin")..":"..os.getComputerID()..":"..Q.nextPour..":1"
+   end
+   local ok,err=pcall(function()
+    if c.castingFluidTank then
+     -- Finish already-recorded direct casts before the shared pipe starts feeding.
+     local draining=false;local done={}
+     for _,job in ipairs(Q.jobs) do
+      if not job.pipe and basins.active(job)>0 then
+       for name,unit in pairs(job.units) do if unit.phase=="partial" and (unit.moved or 0)==0 then job.units[name]=nil;saveQueue() end end
+       if basins.active(job)>0 then
+        draining=true;basins.failedJobId=job.id
+        if basins.tick(job,saveQueue,{allocate=false,nextRequest=token}) then done[job]=true end
+       end
+      end
+     end
+     for i=#Q.jobs,1,-1 do if done[Q.jobs[i]] then table.remove(Q.jobs,i);saveQueue() end end
+     if not draining and Q.jobs[1] then
+      basins.failedJobId=Q.jobs[1].id
+      if pipe.step(Q.jobs[1],saveQueue,token) then table.remove(Q.jobs,1);saveQueue() end
+     end
+    else
+     for _,job in ipairs(Q.jobs) do assert(not job.pipe,"Restore the Casting Fluid Tank assignment to resume this Pipez job") end
+     basins.stepQueue(Q.jobs,saveQueue,token)
+    end
    end)
    if not ok then Q.paused=true;Q.reason=tostring(err);Q.failedJobId=basins.failedJobId;saveQueue()
    elseif Q.failedJobId then Q.failedJobId=nil;saveQueue() end

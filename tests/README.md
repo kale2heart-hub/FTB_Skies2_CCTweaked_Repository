@@ -33,3 +33,8 @@ Queue-wide scheduling tests verify mixed-material jobs fill the basin pool,
 finished jobs release capacity, cooling work survives restoration, duplicate
 ownership is rejected, and automatic batches are admitted ahead without growing
 an unbounded backlog.
+
+`python tests/test_pipe_casting.py` exercises the Pipez feed model and actual
+monitor worker, including material barriers, limited drawer capacity, ten-second
+return-first recovery, exact top-up, checkpoint replay, bounded retries, missing
+fluid, a stalled tank and blocked output. It requires the same Lua 5.2 Lupa runtime.

@@ -298,7 +298,7 @@ any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
 
-## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.4.1)
+## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.5.0)
 
 The two computers share a wired modem network. Liquid Resource Monitor owns the
 Functional Storage fluid supply and serializes transfers. Gear UI requests exact
@@ -481,3 +481,38 @@ Fluid Monitor 1.4.1 gives every queued job its own output-ID list, fixing CC's
 repeated-table serialization error for multiple batches of the same fluid. It
 serializes before writing and recovers a valid primary checkpoint if an incomplete
 pending file was left behind, retaining that rejected file for inspection.
+
+## Pipez casting (Fluid Monitor 1.5.0)
+
+On the Fluid computer open Network Setup and assign **Casting Fluid Tank** to a
+separate Functional Storage fluid drawer. This tank must not be included in either
+main or Gear storage controller's linked inventory. Connect one Pipez Fluid Pipe
+line from that drawer to all managed basins, with continuous extraction and no
+other fluid source feeding the line. Keep the monitor's block output chest assigned.
+Save and restart the Fluid Monitor. The drawer must accept the selected material;
+check its lock/filter if the monitor reports rejected transfers.
+
+The monitor sends a measured single-material batch to the drawer. Pipez fills the
+basins; the monitor reads them concurrently and extracts verified completed blocks.
+A limited-capacity drawer receives more of the same batch after emptying. The
+queue advances only after the tank is empty **and** the previous material's basin
+work is cleared. It cannot run different materials concurrently on a shared feed.
+
+After fluid has been observed in a basin for ten seconds, recovery first tries to
+pull it into main storage. If any remains, the monitor re-queries the actual amount
+and tops up only the missing recipe volume, then waits and extracts the block.
+It tracks returned/top-up amounts in the batch ledger. Three recovery attempts per
+basin/job prevent endless drain/refeed cycles; a tank with no extraction progress
+for thirty seconds pauses with a Pipez routing error. Unknown transfer outcomes
+are retained for explicit inspection instead of automatically repeating them.
+
+If return is impossible and top-ups create more blocks than originally requested,
+those blocks are delivered and the queue reports the extra recovery output before
+continuing. A blocked output chest retries item extraction, never the batch feed.
+Pause/cancel stops future computer feed; the continuously extracting pipe can still
+move fluid already present. Cancellation keeps that material tracked until cleared.
+
+Existing recorded direct casts are finished before the new pipe begins feeding.
+Without a Casting Fluid Tank assignment, direct basin casting remains available.
+Do not remove/change the tank assignment during an active Pipez job; restore it if
+such a job needs to resume. Utilities offers explicit inspected-state recovery.

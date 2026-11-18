@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.3.1","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
+-- @crafting-center {"version":"1.4.0","suite":"crafting-center","id":"fluid_service","title":"Shared Fluid Service","launchable":false,"description":"Serial fluid transfers, durable request receipts and Gear queue protection."}
 return function(root,c)
  local T={busy=false,holds={},registrations={},last="Ready"}
  local path=fs.combine(root,"fluid_transfers.txt")
@@ -12,13 +12,14 @@ return function(root,c)
  state.highwater=state.highwater or {}
  local function sequence(sender,id,localRequest)
   local owner,major,minor
-  if localRequest=="refill" then owner,major,minor=id:match("^refill:(%d+):(%d+):(%d+)$")
+  if localRequest=="return" then owner,major,minor=id:match("^return:(%d+):(%d+):(%d+)$")
+  elseif localRequest=="refill" then owner,major,minor=id:match("^refill:(%d+):(%d+):(%d+)$")
   elseif localRequest then
    if id:sub(1,6)=="basin:" then owner,major,minor=id:match("^basin:(%d+):(%d+):(%d+)$")
    else owner,major,minor=id:match("^monitor:(%d+):(%d+):(%d+)$") end
   else owner,major,minor=id:match("^(%d+):(%d+):(%d+)$") end
   assert(tonumber(owner)==sender and major and minor,"Invalid transfer request identity")
-  return tostring(sender)..(localRequest=="refill" and ":refill" or localRequest and (id:sub(1,6)=="basin:" and ":basin" or ":monitor") or ":gear"),tonumber(major),tonumber(minor)
+  return tostring(sender)..(localRequest=="return" and ":return" or localRequest=="refill" and ":refill" or localRequest and (id:sub(1,6)=="basin:" and ":basin" or ":monitor") or ":gear"),tonumber(major),tonumber(minor)
  end
  local function save()
   local f=assert(fs.open(path..".pending","w"));f.write(textutils.serialize(state));f.close()
@@ -47,6 +48,10 @@ return function(root,c)
   assert(not targets[name] and not sources[name] and not gearSources[name],"Managed basins must be separate from Gear tables/storage and listed once")
   targets[name]="local"
  end
+ if c.castingFluidTank then
+  assert(not targets[c.castingFluidTank] and not sources[c.castingFluidTank] and not gearSources[c.castingFluidTank],"Casting Fluid Tank must be separate from all other fluid sources/destinations")
+  targets[c.castingFluidTank]="local"
+ end
  if c.blockOutputChest then assert(not targets[c.blockOutputChest] and not sources[c.blockOutputChest] and not gearSources[c.blockOutputChest],"Block output chest overlaps a fluid source or casting destination") end
  local function readStock(pool)
   assert(next(pool),"No fluid storage assigned in Network Setup")
@@ -63,6 +68,7 @@ return function(root,c)
  end
  function T.info()
   local outputs={};for i,name in ipairs(c.basins or {}) do outputs["Basin"..i]=name end
+  if c.castingFluidTank then outputs.CastingFluidTank=c.castingFluidTank end
   return {monitors=c.monitors or {},outputs=outputs,basins=c.basins or {},computerId=os.getComputerID(),assignmentExchange=true}
  end
  function T.register(sender,layout)
@@ -75,6 +81,7 @@ return function(root,c)
   for name in pairs(gearSources) do add(name,"Gear-only fluid storage managed by Fluid") end
   for _,name in ipairs(c.basins or {}) do add(name,"Fluid block basin") end
   add(c.blockOutputChest,"Fluid block output chest")
+  add(c.castingFluidTank,"Casting Fluid Tank")
   for client,entry in pairs(T.registrations) do if client~=sender then
    for name in pairs(entry.claims) do add(name,"Gear computer "..client) end
   end end
@@ -210,6 +217,42 @@ return function(root,c)
    if started then T.fault="Uncertain fluid transfer; inspect destination and acknowledge in Utilities" end
    error(result,0)
   end
+  return result
+ end
+ function T.returnFluid(id,origin,fluid,amount)
+  assert(targets[origin]=="local","Return origin is not managed by Fluid Monitor")
+  assert(type(id)=="string" and integer(amount) and amount>0 and type(fluid)=="string","Invalid fluid return")
+  local sender=os.getComputerID();local key=sender.."|"..id
+  local previous=state.records[key]
+  if previous then
+   assert(previous.origin==origin and previous.fluid==fluid and previous.amount==amount,"Return ID reused with different arguments")
+   assert(previous.status=="done","Uncertain return from "..origin.."; inspect before retrying")
+   return {moved=previous.moved}
+  end
+  local family,major,minor=sequence(sender,id,"return");local watermark=state.highwater[family]
+  assert(not watermark or major>watermark.major or major==watermark.major and minor>watermark.minor,"Expired return receipt; inspect "..origin)
+  local deadline=os.clock()+5
+  while T.busy do assert(os.clock()<deadline,"Fluid service busy");sleep(.05) end
+  assert(not T.fault and #T.uncertain()==0,"Uncertain fluid operation; inspect before returning fluid")
+  T.busy=true;local started=false
+  local ok,result=pcall(function()
+   local entry={origin=origin,target=origin,fluid=fluid,amount=amount,moved=0,status="started",pool="return"}
+   while #state.order>=64 do local oldest=table.remove(state.order,1);state.records[oldest]=nil end
+   state.records[key]=entry;state.order[#state.order+1]=key;state.highwater[family]={major=major,minor=minor};started=true;save()
+   local originMethods={};for _,method in ipairs(peripheral.getMethods(origin) or {}) do originMethods[method]=true end
+   for _,target in ipairs(c.sources) do
+    if entry.moved>=amount then break end
+    local methods={};for _,method in ipairs(peripheral.getMethods(target) or {}) do methods[method]=true end
+    local moved=0
+    if methods.pullFluid then moved=peripheral.call(target,"pullFluid",origin,amount-entry.moved,fluid)
+    elseif originMethods.pushFluid then moved=peripheral.call(origin,"pushFluid",target,amount-entry.moved,fluid) end
+    assert(integer(moved) and moved<=amount-entry.moved,"Uncertain fluid return from "..origin)
+    entry.moved=entry.moved+moved;save()
+   end
+   entry.status="done";save();return {moved=entry.moved}
+  end)
+  T.busy=false
+  if not ok then if started then T.fault="Uncertain fluid return from "..origin end;error(result,0) end
   return result
  end
  function T.refill(filter)

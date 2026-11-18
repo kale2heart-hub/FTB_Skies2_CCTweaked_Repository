@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.1.0","suite":"crafting-center","id":"basin_casting","title":"Managed Block Basins","launchable":false,"description":"Persistent one-block pours, cooling and verified block output collection."}
+-- @crafting-center {"version":"1.1.1","suite":"crafting-center","id":"basin_casting","title":"Managed Block Basins","launchable":false,"description":"Persistent one-block pours, cooling and verified block output collection."}
 return function(c,service)
  local T={}
  local function inspect(name)
@@ -113,6 +113,10 @@ return function(c,service)
  function T.waiting(job) return math.max(0,job.quantity-(job.completed or 0)-T.active(job)) end
  function T.pendingFluid(job)
   if job.mode~="basin_blocks" then return 0 end
+  if job.pipe then
+   if job.pipe.cancelled then return 0 end
+   return math.max(0,(job.quantity-job.pipe.baseCompleted)*job.amount-(job.pipe.fed+job.pipe.topped-job.pipe.returned))
+  end
   local poured=0;for _,unit in pairs(job.units or {}) do poured=poured+(unit.moved or 0) end
   return math.max(0,(job.quantity-(job.completed or 0))*job.amount-poured)
  end

@@ -5,6 +5,32 @@ internal development labels have been consolidated into the entries below;
 1.2.1 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Fluid Monitor 1.5.0 - Pipez Casting Fluid Tank
+
+Date: 2026-11-17
+
+- Added Casting Fluid Tank to Network Setup 1.5.0: a separate Functional Storage
+  fluid drawer feeding the managed basins through one continuously extracting
+  Pipez line. The computer fills measured batches into this tank.
+- Pipez mode processes one queue material at a time. It waits for the tank and
+  prior basin contents to clear before advancing; the monitor collects verified
+  finished blocks into the configured output chest.
+- Basin fluid present longer than ten seconds triggers a measured return to main
+  storage first. If fluid remains, request only the exact missing block volume,
+  then collect the output. Recovery is bounded to three attempts per basin/job.
+- Persisted feed/return/top-up receipts and volume accounting protect restart
+  recovery. A stuck feed tank or unaccounted fluid pauses for inspection; extra
+  blocks produced by necessary top-ups are delivered and explicitly reported.
+- Cancellation stops future feed; fluid already in the continuously running pipe
+  and basins remains tracked until drained/recovered/collected.
+- Basin reads use up to eight concurrent readers. Normal casting no longer issues
+  one computer fluid pour per basin. Existing direct casts drain before switching.
+- Added pipe_casting.lua 1.0.0; Fluid Service is 1.4.0, basin helper 1.1.1, and
+  updater 1.7.0 includes the new module. Unassigned tanks retain direct casting.
+- Local tests cover normal batches, limited tank capacity, ten-second recovery,
+  returns/top-ups, restart receipts, bounds, blocked outputs and actual queue flow.
+  In-game Pipez commissioning remains required.
+
 ## Fluid Monitor 1.4.1 - Queue serialization fix
 
 - Each new job copies its recipe output list. Multiple queued batches of the same

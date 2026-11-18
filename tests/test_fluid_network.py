@@ -3,7 +3,7 @@ import sys
 from lupa.lua52 import LuaRuntime
 R=Path(__file__).resolve().parents[1]
 l=LuaRuntime(unpack_returned_tuples=True)
-for name in ['fluid_network','fluid_client','fluid_service','fluid_monitor','network_setup','basin_casting','basin_casting_data']:l.globals()[name+'Source']=(R/(name+'.lua')).read_text()
+for name in ['fluid_network','fluid_client','fluid_service','fluid_monitor','network_setup','basin_casting','basin_casting_data','pipe_casting']:l.globals()[name+'Source']=(R/(name+'.lua')).read_text()
 l.execute(r'''
  printError=function() end
  now=100;files={};calls=0;pushes={};balances={a=100000,b=1000};limit=1000000;inject=false;epoch=100000
@@ -136,7 +136,7 @@ l.execute(r"""
  blit=function(text,fg,bg) assert(#text==#fg and #fg==#bg and x+#text-1<=60);writes=writes+1 end}
  peripheral.wrap=function() return mon end
  dofile=function(path)
-  for _,name in ipairs({'fluid_network','fluid_service','basin_casting','basin_casting_data'}) do if path:find(name..'.lua',1,true) then return assert(load(_G[name..'Source']))() end end
+  for _,name in ipairs({'fluid_network','fluid_service','basin_casting','basin_casting_data','pipe_casting'}) do if path:find(name..'.lua',1,true) then return assert(load(_G[name..'Source']))() end end
   error(path)
  end
  config.basins={'basin1','basin2'};config.outputs=nil;config.blockOutputChest='block_chest'
@@ -649,6 +649,21 @@ l.execute(r"""
  assert(files['root/fluid_jobs.txt']==primary and not files['root/fluid_jobs.txt.pending'])
 """)
 print('PASS strict CC serialization: same-material jobs own output arrays, queue saves reject shared references before opening pending file, incomplete pending save is retained and last complete queue recovers')
+
+setup=(R/'network_setup.lua').read_text()
+l.globals().tankPicker=setup[:setup.rindex('while true do')]+"\nreturn {choose=choose,entries=entries,save=save,config=c}"
+l.execute(r"""
+ os.getComputerID=function() return 20 end
+ local main='functionalstorage:storage_controller_0';local gear='functionalstorage:storage_controller_1';local tank='functionalstorage:fluid_2'
+ files['root/fluid_network.txt']=textutils.serialize({role='fluid',modem='left',monitors={'monitor_1'},sources={main},gearSources={gear},basins={},clients={10}})
+ peripheral.getNames=function() return {main,gear,tank,'othermod:tank_0'} end
+ peripheral.getMethods=function() return {'tanks','pushFluid','pullFluid'} end
+ local picker=assert(load(tankPicker))();picker.choose('castingFluidTank','fluid',false)
+ local rows=picker.entries();assert(#rows==2 and rows[2].label=='[ ] '..tank);rows[2].action();picker.save()
+ assert(Network.load('root').castingFluidTank==tank)
+ picker.choose('castingFluidTank','fluid',false);rows=picker.entries();rows[1].action();assert(picker.config.castingFluidTank==nil)
+""")
+print('PASS Casting Fluid Tank setup: Functional Storage only, excludes main/Gear stores, saved single assignment and explicit direct-mode clearing')
 for p in R.glob('*.lua'):
  ok,err=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,err)
 print('PASS all scripts compile in Lua 5.2')

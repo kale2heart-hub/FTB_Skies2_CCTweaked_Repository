@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.4.0","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
+-- @crafting-center {"version":"1.5.0","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -84,6 +84,7 @@ local function choose(key,kind,multi)
   if kind=="modem" and has({"left","right","top","bottom","front","back"},name) and peripheral.hasType(name,"modem") then
    local ok,wireless=pcall(peripheral.call,name,"isWireless");valid=ok and wireless==false
   end
+  if key=="castingFluidTank" then valid=isStorageSource(name,m) and not has(c.sources,name) and not has(c.gearSources,name) end
   if key=="sources" or key=="gearSources" then
    local other=key=="sources" and c.gearSources or c.sources
    valid=isStorageSource(name,m) and (not has(other,name) or has(c[key],name))
@@ -138,6 +139,10 @@ local function save()
   end
   for _,name in ipairs(c.sources) do reserve(name,"a main fluid storage source") end
   for _,name in ipairs(c.gearSources) do reserve(name,"a Gear-only fluid storage source") end
+  if c.castingFluidTank then
+   reserve(c.castingFluidTank,"the Casting Fluid Tank")
+   assert(isStorageSource(c.castingFluidTank,methods(c.castingFluidTank)),"Casting Fluid Tank must be a connected Functional Storage fluid device")
+  end
   for _,name in ipairs(c.basins) do
    reserve(name,"a managed block basin")
    local m=methods(name);assert(m.list and m.tanks and m.pushItems,"Basin must expose fluids and item output: "..name)
@@ -179,7 +184,8 @@ local function entries()
  if view=="choose" then
   local rows={}
   if field=="sources" or field=="gearSources" then rows[1]={label="Clear source selections",action=function() c[field]={} end}
-  elseif field=="basins" then rows[1]={label="Clear managed basin selections",action=function() c.basins={} end} end
+  elseif field=="basins" then rows[1]={label="Clear managed basin selections",action=function() c.basins={} end}
+  elseif field=="castingFluidTank" then rows[1]={label="Clear Casting Fluid Tank / direct mode",action=function() c.castingFluidTank=nil;view="main";selected=1;offset=0 end} end
   for _,name in ipairs(choices) do
    local current=value(field);local active=multiple and has(current or {},name) or current==name
    local conflict=(field=="sources" and has(c.gearSources,name)) or (field=="gearSources" and has(c.sources,name))
@@ -219,6 +225,7 @@ local function entries()
   add("Gear-only fluid storage: "..#c.gearSources,function() choose("gearSources","fluid",true) end,"gearSources")
   add("Default Gear minimum: "..c.gearMinimumDefault.." mB",function() input("gearMinimumDefault","Minimum per fluid (mB)") end)
   add("Managed block basins: "..#c.basins,function() choose("basins","basin",true) end,"basins")
+  add("Casting Fluid Tank: "..tostring(c.castingFluidTank or "unset"),function() choose("castingFluidTank","fluid",false) end,"castingFluidTank")
   add("Block output chest: "..tostring(c.blockOutputChest or "unset"),function() choose("blockOutputChest","inventory",false) end,"blockOutputChest")
   add("Extra reserve for monitor casting: "..c.keepMb.." mB",function() input("keepMb","Additional fluid reserve per material (mB)") end)
   add("Disable local block casting",function() c.basins={};c.blockOutputChest=nil;c.outputs=nil;message="Basins cleared; fluid service remains available" end)
