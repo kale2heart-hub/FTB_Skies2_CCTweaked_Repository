@@ -1,6 +1,7 @@
--- @crafting-center {"version":"2.1.1","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
+-- @crafting-center {"version":"2.2.0","suite":"crafting-center","id":"gear","title":"Gear UI","args":[],"description":"Monitor UI and production queue.","locks":["casting-state"],"dependencies":["gear_stats_data.lua","gear_preview.lua","gear_kit_data.lua","gear_request.lua","gear_chest_data.lua","chest_catalog.lua","chest_delivery.lua","gear_casting_data.lua","casting_recovery.lua","cast_tracking.lua","gear_config.lua","gear_demo.lua"],"category":"Applications"}
 -- Silent Gear request console, CC:Tweaked. Run: gear_ui
 -- Live casting and chest-delivery queues, including Gear part kits for manual assembly.
+local VERSION="2.2.0"
 local ROOT = fs.getDir(shell.getRunningProgram())
 local C = dofile(fs.combine(ROOT, "gear_config.lua"))
 local Cast=dofile(fs.combine(ROOT,"cast_tracking.lua"))(ROOT,C)
@@ -30,6 +31,17 @@ local S = {screen="welcome", page=1, selected={}, message="",quantity=1}
 local W,H = 0,0
 S.lastInteraction=os.clock()
 S.welcomeAt=S.lastInteraction
+local function advanceStatPage(now)
+  if S.screen~="review" or S.reviewTab~="stats" or S.category=="Other" then
+    S.statsNext=nil
+    return false
+  end
+  if not S.statsNext then S.statsNext=math.max(now+3,S.statsPauseUntil or 0) end
+  if (S.statsPages or 1)<=1 or now<math.max(S.statsNext,S.statsPauseUntil or 0) then return false end
+  S.statsPage=(S.statsPage or 1)%(S.statsPages or 1)+1
+  S.statsNext=now+3
+  return true
+end
 local castStations={}
 for _,shape in ipairs({"Ingot","Nugget","Gem","Gear","Rod","Plate","Block"}) do
   castStations[shape]={peripheral=shape=="Ingot" and C.castingTable or shape=="Block" and C.castingBasin or ""}
@@ -747,14 +759,14 @@ local function render()
       m.write(y==1 and centered(label,W) or (label..string.rep(" ",W-#label)))
     end
     local function button(x,y,width,label,action,bg,fg,pulseState)
-      if (label=="Up" or label=="Down") and not action then return end
+      if (label=="Previous" or label=="Next") and not action then return end
       label=label:sub(1,width)
       local accent=label=="Review" or label=="Save request"
-      local quiet=label=="Up" or label=="Down" or label=="Reset" or label:sub(1,5)=="Clear" or label=="<< Back"
+      local quiet=label=="Previous" or label=="Next" or label=="Reset" or label:sub(1,5)=="Clear" or label=="<< Back"
       local background=bg or (action and (accent and colors.cyan or (quiet and colors.gray or colors.blue)) or colors.gray)
       if action then
         local state=pulseState
-        if label=="Up" or label=="Down" then state="scroll"
+        if label=="Previous" or label=="Next" then state="scroll"
         elseif not state and bg==colors.red then state="missing"
         elseif not state and bg==colors.green then state="selected" end
         if state then background=pulseSlots[state] end
@@ -811,7 +823,7 @@ local function render()
       local materialList=listPage(#choices,S.materialPage)
       local materialPages=materialList.pages
       S.materialPage=materialList.page
-      button(rightX,8,right,"Up",S.materialPage>1 and function() S.materialPage=S.materialPage-1 end or nil)
+      button(rightX,8,right,"Previous",S.materialPage>1 and function() S.materialPage=S.materialPage-1 end or nil)
       for i=1,materialList.count do
         local r=choices[materialList.offset+i]
         if r then
@@ -831,7 +843,7 @@ local function render()
       if #choices==0 then
         text(rightX,materialList.y,right,"No stocked options",colors.black,colors.orange)
       end
-      button(rightX,H-5,right,"Down",S.materialPage<materialPages and function() S.materialPage=S.materialPage+1 end or nil)
+      button(rightX,H-5,right,"Next",S.materialPage<materialPages and function() S.materialPage=S.materialPage+1 end or nil)
       if partPages>1 then
         button(1,H-5,left,"Parts "..S.partPage.."/"..partPages.." >",function() S.partPage=S.partPage%partPages+1 end)
       end
@@ -863,7 +875,7 @@ local function render()
         if S.category~="Other" then
         local statsActive=S.reviewTab=="stats"
         button(1,6,left,(not statsActive and "> " or "").."Selections",function() S.reviewTab="parts" end,not statsActive and colors.cyan or colors.gray)
-        button(rightX,6,right,(statsActive and "> " or "").."Stats & Traits",function() S.reviewTab="stats" end,statsActive and colors.cyan or colors.gray)
+        button(rightX,6,right,(statsActive and "> " or "").."Stats & Traits",function() S.reviewTab="stats";S.statsNext=nil end,statsActive and colors.cyan or colors.gray)
         text(1,8,left,string.rep("-",left),colors.black,not statsActive and colors.cyan or colors.gray)
         text(rightX,8,right,string.rep("-",right),colors.black,statsActive and colors.cyan or colors.gray)
         end
@@ -884,14 +896,15 @@ local function render()
           end
           local perPage=math.max(1,H-19)
           local total=math.max(1,math.ceil(#wrapped/perPage))
+          S.statsPages=total
           S.statsPage=math.max(1,math.min(S.statsPage or 1,total))
           for i=1,perPage do
             local label=wrapped[(S.statsPage-1)*perPage+i]
             if label then text(1,9+i,W,label,colors.black,colors.white) end
           end
           if total>1 then
-            button(1,H-8,left,"Up",S.statsPage>1 and function() S.statsPage=S.statsPage-1 end or nil)
-            button(rightX,H-8,right,"Down",S.statsPage<total and function() S.statsPage=S.statsPage+1 end or nil)
+            button(1,H-8,left,"Previous",S.statsPage>1 and function() S.statsPage=S.statsPage-1 end or nil)
+            button(rightX,H-8,right,"Next",S.statsPage<total and function() S.statsPage=S.statsPage+1 end or nil)
             line(9,"Page: "..S.statsPage.." / "..total,colors.black,colors.lightGray)
           end
         else
@@ -927,19 +940,19 @@ local function render()
         if S.reviewTab~="stats" or S.category=="Other" then
         if S.category~="Other" then
           if pages>1 then line(9,"Page: "..S.page.." / "..pages,colors.black,colors.lightGray) end
-          button(1,H-8,left,"Up",S.page>1 and function() S.page=S.page-1 end or nil)
-          button(rightX,H-8,right,"Down",S.page<pages and function() S.page=S.page+1 end or nil)
+          button(1,H-8,left,"Previous",S.page>1 and function() S.page=S.page-1 end or nil)
+          button(rightX,H-8,right,"Next",S.page<pages and function() S.page=S.page+1 end or nil)
         else
-          button(1,8,left,"Up",S.page>1 and function() S.page=S.page-1 end or nil)
-          button(1,H-5,left,"Down",S.page<pages and function() S.page=S.page+1 end or nil)
+          button(1,8,left,"Previous",S.page>1 and function() S.page=S.page-1 end or nil)
+          button(1,H-5,left,"Next",S.page<pages and function() S.page=S.page+1 end or nil)
         end
         end
       else
         local cp=listPage(#categories,S.categoryPage).pages
-        button(1,8,left,"Up",S.categoryPage>1 and function() S.categoryPage=S.categoryPage-1 end or nil)
-        button(1,H-5,left,"Down",S.categoryPage<cp and function() S.categoryPage=S.categoryPage+1 end or nil)
-        button(rightX,8,right,"Up",S.screen=="item" and S.page>1 and function() S.page=S.page-1 end or nil)
-        button(rightX,H-5,right,"Down",S.screen=="item" and S.page<pages and function() S.page=S.page+1 end or nil)
+        button(1,8,left,"Previous",S.categoryPage>1 and function() S.categoryPage=S.categoryPage-1 end or nil)
+        button(1,H-5,left,"Next",S.categoryPage<cp and function() S.categoryPage=S.categoryPage+1 end or nil)
+        button(rightX,8,right,"Previous",S.screen=="item" and S.page>1 and function() S.page=S.page-1 end or nil)
+        button(rightX,H-5,right,"Next",S.screen=="item" and S.page<pages and function() S.page=S.page+1 end or nil)
       end
       local status=S.message
       if S.screen=="review" then local _,reason=validate(); if status=="" then status=reason end end
@@ -1168,7 +1181,11 @@ drawJob=function()
   if S.screen=="welcome" then return end
   for _,d in ipairs(displays) do
     d.mon.setBackgroundColor((Q.paused or S.screen=="castIssue") and colors.red or colors.blue)
-    d.mon.setCursorPos(math.floor((d.w-W)/2)+1,d.h); d.mon.write(string.rep(" ",W))
+    local ox=math.floor((d.w-W)/2)
+    d.mon.setCursorPos(ox+1,d.h); d.mon.write(string.rep(" ",W))
+    local version="v"..VERSION
+    d.mon.setTextColor(colors.gray)
+    d.mon.setCursorPos(ox+math.max(1,W-#version),d.h); d.mon.write(version)
   end
   if S.screen=="main" then return end
   for _,d in ipairs(displays) do
@@ -1766,6 +1783,8 @@ while true do
     for _,d in ipairs(displays) do
       if d.name==name then
         S.lastInteraction=os.clock()
+        S.statsPauseUntil=S.lastInteraction+10
+        S.statsNext=S.statsPauseUntil
         for _,b in ipairs(d.buttons) do
           if y>=b.y and y<b.y+(b.h or 1) and x>=b.x and x<b.x+b.w then b.action(); break end
         end
@@ -1788,6 +1807,7 @@ while true do
     elseif pending and idle>=60 and S.screen~="queue" then
       openQueue(); render()
     end
+    if advanceStatPage(os.clock()) then render() end
     updatePulse(); drawJob()
     pulseTimer=os.startTimer(0.2)
   elseif event=="timer" and name==timer then

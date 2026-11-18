@@ -4,6 +4,15 @@ This log records major build changes. Script metadata versions remain separate
 and identify individual files. Unreleased entries describe local work that has
 not yet been committed or published as a release.
 
+## Gear UI 2.2.0 - Automatic stat paging (Unreleased)
+
+- Stats & Traits advances one page every three seconds, wrapping to page one.
+- Any touch on a configured monitor pauses automatic paging for ten seconds;
+  manual navigation remains available and repeated touches extend the pause.
+- Gear UI page buttons now read Previous and Next, retaining hidden unavailable
+  controls and blue pulse styling.
+- Non-Welcome footers show the Gear UI version in a muted shade.
+
 ## Gear UI 2.1.1 - Review tab spacing (Unreleased)
 
 - Review tabs now use a distinct active marker, muted inactive background, and
