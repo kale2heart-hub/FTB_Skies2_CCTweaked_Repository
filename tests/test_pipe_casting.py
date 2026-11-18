@@ -88,7 +88,9 @@ l.execute(r'''
  current=job(5,iron,1);tick();h.b1={amount=100,name=iron};h.tank.amount=h.tank.amount-100;tick()
  canReturn=false;local beforeCalls=#calls;tick(10.1)
  assert(#calls==beforeCalls+1 and calls[#calls].target=='b1' and calls[#calls].moved==710 and current.pipe.topped==710)
+ current.pipe.recoveries.b1=3
  tick(3.1);tick(3.1);assert(collected['minecraft:iron_block']==5)
+ assert(current.pipe.recoveries.b1==nil,'successful block must reset basin recovery budget')
  -- Do not switch material merely because the tank is empty: previous basins still matter.
  assert(current.pipe.fed==810 and h.tank.amount==710)
  canReturn=true

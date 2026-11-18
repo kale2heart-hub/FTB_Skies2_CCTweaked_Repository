@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.0.1","suite":"crafting-center","id":"pipe_casting","title":"Pipez Basin Casting","launchable":false,"description":"Single-material tank batches, item collection and bounded stalled-fluid recovery."}
+-- @crafting-center {"version":"1.0.2","suite":"crafting-center","id":"pipe_casting","title":"Pipez Basin Casting","launchable":false,"description":"Single-material tank batches, item collection and bounded stalled-fluid recovery."}
 return function(c,service)
  local T={}
  local function now() return os.epoch("utc")/1000 end
@@ -123,6 +123,7 @@ return function(c,service)
       unit.phase="pipe_wait"
       if moved==1 then
        job.completed=(job.completed or 0)+1;job.remaining=math.max(0,(job.quantity-job.completed)*job.amount)
+       p.recoveries[name]=nil;unit.recoveryAt=nil
        unit.itemSeen=nil;unit.firstFluid=nil;unit.fullAt=nil;unit.extractSince=nil;changed(p)
       end
       save()

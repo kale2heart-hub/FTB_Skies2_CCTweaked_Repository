@@ -1,5 +1,5 @@
--- @crafting-center {"version":"1.5.1","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["pipe_casting.lua","basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
-local VERSION="1.5.1"
+-- @crafting-center {"version":"1.5.2","suite":"crafting-center","id":"fluid_monitor","title":"Liquid Resource Monitor","category":"Applications","description":"Fluid stock, managed whole-block basins and shared Gear fluid service.","locks":["fluid-service"],"dependencies":["pipe_casting.lua","basin_casting.lua","basin_casting_data.lua","fluid_network.lua","fluid_service.lua"]}
+local VERSION="1.5.2"
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -244,7 +244,17 @@ local function render()
     if #Q.jobs==0 then line(10,"Queue idle",nil,colors.lightGray) end
     button(1,H-8,half,"Previous",S.page>1 and function() S.page=S.page-1 end or nil)
     button(right,H-8,half,"Next",S.page<pages and function() S.page=S.page+1 end or nil)
-    button(1,H-4,W,"Resume Queue",Q.paused and function() Q.paused=false;Q.reason=nil;saveQueue();os.queueEvent("fluid_queue_changed") end or nil,colors.cyan)
+    button(1,H-4,W,"Resume Queue",Q.paused and function()
+     if Q.reason and Q.reason:find("Recovery limit reached",1,true) then
+      for _,job in ipairs(Q.jobs) do
+       if job.pipe and (job.id==Q.failedJobId or not Q.failedJobId and job==Q.jobs[1]) then
+        job.pipe.recoveries={}
+        for _,unit in pairs(job.units) do unit.firstFluid=os.epoch("utc")/1000;unit.recoveryAt=nil end
+       end
+      end
+     end
+     Q.paused=false;Q.reason=nil;saveQueue();os.queueEvent("fluid_queue_changed")
+    end or nil,colors.cyan)
     line(H-1,Q.reason or service.last,nil,Q.paused and colors.red or colors.lightGray)
    elseif S.screen=="utilities" then
     line(6,"Fluid Service / Error Report",colors.blue)

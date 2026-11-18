@@ -246,3 +246,8 @@ batch limits divide this value by the material's block recipe volume.
 Fluid Service 1.4.1 permits feeds up to this capacity only for the assigned
 Casting Fluid Tank. Pipe casting 1.0.1 supports these feeds and normalizes nil
 empty inventories; malformed non-table snapshots fail with the device name.
+
+Fluid Monitor 1.5.2 uses pipe_casting.lua 1.0.2. Recovery counters remain in
+`job.pipe.recoveries`, but reset per basin after successful block delivery.
+Resume resets the failed job's counters only for recovery-limit errors; pending
+transfer receipts, fluid accounting and completed totals remain intact.

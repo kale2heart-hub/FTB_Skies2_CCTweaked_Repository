@@ -5,6 +5,19 @@ internal development labels have been consolidated into the entries below;
 1.2.1 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Fluid Monitor 1.5.2 - Basin recovery budget
+
+Date: 2026-11-17
+
+- Pipe casting 1.0.2 resets a basin's recovery attempts after a verified block
+  is delivered, preventing successful recoveries accumulating across large batches.
+- Three recoveries without successful delivery still pause the queue.
+- Resume after a recovery-limit error resets only the failed job's recovery
+  budget and restarts its ten-second observation window. Fluid receipts and
+  delivered counts are preserved, including for existing saved jobs.
+- Local Pipez and fluid network tests pass, including recovery-limit enforcement
+  and resetting the budget after successful output.
+
 ## Fluid Monitor 1.5.1 - Large casting batches and empty basin fix
 
 Date: 2026-11-17

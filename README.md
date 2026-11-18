@@ -298,7 +298,7 @@ any configured screen pauses this for ten seconds; Previous/Next still work
 manually. Paging wraps to the first page. Existing inactivity-to-Welcome/Queue
 rules remain in effect. Every non-Welcome footer shows the current Gear UI version.
 
-## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.5.1)
+## Shared fluid network (Gear UI 1.2.1 / Liquid Resource Monitor 1.5.2)
 
 The two computers share a wired modem network. Liquid Resource Monitor owns the
 Functional Storage fluid supply and serializes transfers. Gear UI requests exact
@@ -482,7 +482,7 @@ repeated-table serialization error for multiple batches of the same fluid. It
 serializes before writing and recovers a valid primary checkpoint if an incomplete
 pending file was left behind, retaining that rejected file for inspection.
 
-## Pipez casting (Fluid Monitor 1.5.1)
+## Pipez casting (Fluid Monitor 1.5.2)
 
 On the Fluid computer open Network Setup and assign **Casting Fluid Tank** to a
 separate Functional Storage fluid drawer. This tank must not be included in either
@@ -526,3 +526,8 @@ batches also respect available fluid and Gear reservations. Existing queued
 quantities are preserved. Smaller actual tank acceptance is handled by feeding
 more of the same batch after the tank empties. Empty basin inventories reported
 as nil are accepted; invalid inventory data reports the affected basin.
+
+Fluid Monitor 1.5.2 resets each basin's three-attempt recovery budget after a
+verified block is delivered. Resume after a recovery-limit pause grants the
+failed job a fresh budget and ten-second observation period without resetting
+its fluid ledger or completed quantity.
