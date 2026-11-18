@@ -439,3 +439,9 @@ are retained. No remote settings are edited by the peer.
 Assigned monitors that disconnect remain in Network Setup's monitor picker,
 shown in red with `[DISCONNECTED]`. Press Enter to remove that assignment,
 then save; reconnecting restores the normal display status.
+
+Network Setup 1.3.2 applies missing-device handling to every device selector:
+modems, monitors, both fluid source pools, Gear station reservations, basins and
+the block output chest. Missing assigned devices stay red and can be toggled off.
+The main menu marks affected device categories red with a leading count such as
+`[2 DISCONNECTED]`, which clears when devices reconnect or are deselected.

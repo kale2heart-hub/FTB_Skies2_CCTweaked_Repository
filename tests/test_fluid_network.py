@@ -18,7 +18,7 @@ l.execute(r'''
   if mode=='r' then if not files[p] then return nil end;return {readAll=function() return files[p] end,close=function() end} end
   local data='';return {write=function(s) data=data..s end,close=function() files[p]=data end}
  end}
- peripheral={call=function(name,method,...)
+ peripheral={getNames=function() return {} end,call=function(name,method,...)
   if method=='tanks' then return {{name='productivemetalworks:molten_iron',amount=balances[name] or 0}} end
   if method=='pushFluid' then
    local target,amount,fluid=...;calls=calls+1
@@ -30,7 +30,7 @@ l.execute(r'''
   error(method)
  end,hasType=function() return true end}
  config={role='fluid',modem='left',monitors={'fluid_monitor'},sources={'a','b'},destinations={'gear_table'},basins={'ingot_buffer','block_buffer'},clients={10},keepMb=0}
- function findAction(rows,prefix) for _,row in ipairs(rows) do if row.label:sub(1,#prefix)==prefix then return row.action end end;error('Missing action '..prefix) end
+ function findAction(rows,prefix) for _,row in ipairs(rows) do local label=row.label:gsub('^%[%d+ DISCONNECTED%] ','');if label:sub(1,#prefix)==prefix then return row.action end end;error('Missing action '..prefix) end
  Network=assert(load(fluid_networkSource))();factory=assert(load(fluid_serviceSource))();service=factory('root',config)
  local function request(id,method,args,sender) return service.handle(sender or 10,{version=1,id='10:100000:'..id,method=method,args=args}) end
  assert(not pcall(request,1,'stock',{},11))
@@ -472,6 +472,54 @@ l.execute(r"""
  local saved=Network.load('root');assert(#saved.monitors==2 and saved.monitors[1]=='monitor_2' and saved.monitors[2]=='monitor_3')
 """)
 print('PASS missing monitors: retained/red/deselectable, natural order, refreshed choices and live disconnect/reconnect styling')
+
+setup=(R/'network_setup.lua').read_text()
+l.globals().devicePicker=setup[:setup.rindex('while true do')]+"\nreturn {choose=choose,entries=entries,draw=draw,config=c,main=function() view='main' end}"
+l.execute(r"""
+ os.getComputerID=function() return 20 end
+ local main0='functionalstorage:storage_controller_0';local main1='functionalstorage:storage_controller_1';local gear='functionalstorage:storage_controller_2'
+ local basin43='productivemetalworks:casting_43';local basin44='productivemetalworks:casting_44';local chest='sophisticatedstorage:chest_9'
+ files['root/fluid_network.txt']=textutils.serialize({role='fluid',modem='left',monitors={'monitor_1'},sources={main0,main1},gearSources={gear},basins={basin43,basin44},blockOutputChest=chest,clients={10}})
+ local online={monitor_1=true,[main1]=true,[basin44]=true}
+ peripheral.getNames=function() local names={};for name in pairs(online) do names[#names+1]=name end;return names end
+ peripheral.hasType=function(name,kind) return online[name]==true and (kind=='monitor' and name=='monitor_1' or kind=='modem' and name=='right') end
+ peripheral.getMethods=function(name)
+  assert(online[name],'Disconnected')
+  if name:find('functionalstorage:',1,true) then return {'tanks','pushFluid'} end
+  if name:find('casting_',1,true) then return {'list','tanks','pushFluid','pushItems'} end
+  if name==chest then return {'list','size','pushItems'} end
+  return {}
+ end
+ local picker=assert(load(devicePicker))()
+ local function categories()
+  picker.main();local result={};for _,row in ipairs(picker.entries()) do if row.deviceKey then result[row.deviceKey]=row end end;return result
+ end
+ local cats=categories()
+ for _,key in ipairs({'modem','sources','gearSources','basins','blockOutputChest'}) do assert(cats[key].fg==colors.red and cats[key].label:find('[1 DISCONNECTED]',1,true),key) end
+ assert(cats.monitors.fg==nil)
+ local function missing(key,name,multiple)
+  picker.choose(key,key=='modem' and 'modem' or 'fluid',multiple)
+  for _,row in ipairs(picker.entries()) do
+   if row.label:find(name,1,true) then assert(row.fg==colors.red and row.label:find('[DISCONNECTED]',1,true));return row end
+  end
+  error('Missing disconnected entry '..name)
+ end
+ missing('sources',main0,true).action();assert(#picker.config.sources==1 and picker.config.sources[1]==main1 and categories().sources.fg==nil)
+ missing('gearSources',gear,true).action();assert(#picker.config.gearSources==0 and categories().gearSources.fg==nil)
+ missing('modem','left',false).action();assert(picker.config.modem==nil and categories().modem.fg==nil)
+ missing('blockOutputChest',chest,false).action();assert(picker.config.blockOutputChest==nil and categories().blockOutputChest.fg==nil)
+ picker.choose('basins','basin',true);online[basin43]=true
+ local rows=picker.entries();for _,row in ipairs(rows) do if row.label:find(basin43,1,true) then assert(row.fg==nil and not row.label:find('[DISCONNECTED]',1,true)) end end
+ assert(categories().basins.fg==nil)
+ online[basin44]=nil;missing('basins',basin44,true).action();assert(#picker.config.basins==1 and picker.config.basins[1]==basin43)
+ online.right=true
+ files['root/fluid_network.txt']=textutils.serialize({role='gear',modem='right',monitors={'monitor_1'},serverId=20,destinations={'productivemetalworks:casting_2',basin43}})
+ os.getComputerID=function() return 10 end
+ picker=assert(load(devicePicker))();cats=categories();assert(cats.destinations.fg==colors.red)
+ missing('destinations','productivemetalworks:casting_2',true).action()
+ assert(#picker.config.destinations==1 and categories().destinations.fg==nil)
+""")
+print('PASS every device category: red disconnected counts, retained missing modem/stores/basins/stations/chest, multi/single deselection, immediate reconnect updates and warnings clear after removal')
 for p in R.glob('*.lua'):
  ok,err=l.eval('function(s) local f,e=load(s);return f~=nil,e end')(p.read_text());assert ok,(p.name,err)
 print('PASS all scripts compile in Lua 5.2')

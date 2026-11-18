@@ -21,3 +21,6 @@ and saved on-monitor minimum edits without losing device assignments.
 Ownership-exchange checks cover role-specific menus, independent station-range
 presets, server-side monitor/storage/basin/chest/peer conflicts, registration-only
 pour authority, heartbeat re-registration after restart, and client quarantine.
+
+Missing-device tests exercise red category counts and retained offline entries
+for every single/list device field, deselection, and disconnect/reconnect updates.

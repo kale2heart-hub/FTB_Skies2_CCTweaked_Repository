@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.3.1","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
+-- @crafting-center {"version":"1.3.2","suite":"crafting-center","id":"network_setup","title":"Fluid Network Setup","category":"Console Scripts","description":"Assign this computer, monitors, storage, block basins/output and its partner computer.","dependencies":["fluid_network.lua"],"locks":["fluid-network-setup"]}
 local ROOT=fs.getDir(shell.getRunningProgram())
 local N=dofile(fs.combine(ROOT,"fluid_network.lua"))
 local c=N.load(ROOT)
@@ -33,6 +33,19 @@ local function monitorConnected(name)
  local ok,connected=pcall(peripheral.hasType,name,"monitor")
  return ok and connected==true
 end
+local function assignedDevices(key)
+ local value=c[key]
+ if type(value)=="table" then return value end
+ if type(value)=="string" and value~="" then return {value} end
+ return {}
+end
+local function connected(key,name,present)
+ if key=="monitors" then return monitorConnected(name) end
+ return present[name]==true
+end
+local function presentDevices()
+ local result={};for _,name in ipairs(peripheral.getNames()) do result[name]=true end;return result
+end
 local function choose(key,kind,multi)
  choices={};field=key;multiple=multi
  for _,name in ipairs(peripheral.getNames()) do
@@ -54,9 +67,7 @@ local function choose(key,kind,multi)
   elseif key=="blockOutputChest" then valid=m.list and m.size and m.pushItems and not m.tanks end
   if valid then choices[#choices+1]=name end
  end
- if key=="monitors" then
-  for _,name in ipairs(c.monitors) do if not has(choices,name) then choices[#choices+1]=name end end
- end
+ for _,name in ipairs(assignedDevices(key)) do if not has(choices,name) then choices[#choices+1]=name end end
  table.sort(choices,deviceLess);view="choose";selected=1;offset=0;message="Enter selects/toggles | B returns"
 end
 local function value(key)
@@ -113,6 +124,7 @@ local function save()
  N.save(ROOT,c);message="Saved fluid_network.txt. Restart the affected application to apply."
 end
 local function entries()
+ local present=presentDevices()
  if view=="choose" then
   local rows={}
   if field=="sources" or field=="gearSources" then rows[1]={label="Clear source selections",action=function() c[field]={} end}
@@ -120,9 +132,15 @@ local function entries()
   for _,name in ipairs(choices) do
    local current=value(field);local active=multiple and has(current or {},name) or current==name
    local conflict=(field=="sources" and has(c.gearSources,name)) or (field=="gearSources" and has(c.sources,name))
-   local disconnected=field=="monitors" and not monitorConnected(name)
+   local disconnected=not connected(field,name,present)
    rows[#rows+1]={label=(active and "[x] " or "[ ] ")..name..(disconnected and " [DISCONNECTED]" or conflict and " [CONFLICT]" or ""),fg=disconnected and colors.red or nil,action=function()
-    if disconnected and not has(c.monitors,name) then message="Reconnect this monitor before assigning it again";return end
+    if disconnected then
+     if active then
+      if multiple then toggle(c[field],name) else c[field]=nil;view="main";selected=1;offset=0 end
+      message="Disconnected device assignment removed; select SAVE to apply"
+     else message="Reconnect this device before assigning it again" end
+     return
+    end
     if multiple then
      if conflict and not has(c[field],name) then message="Device belongs to the other system; remove that assignment first";return end
      c[field]=c[field] or {};toggle(c[field],name)
@@ -133,24 +151,24 @@ local function entries()
  end
  local rows={
   {label="Role: "..c.role,action=function() c.role=c.role=="gear" and "fluid" or "gear" end},
-  {label="Local wired modem: "..tostring(c.modem or "unset"),action=function() choose("modem","modem",false) end},
-  {label="Assigned monitors: "..#c.monitors,action=function() choose("monitors","monitor",true) end},
+  {deviceKey="modem",label="Local wired modem: "..tostring(c.modem or "unset"),action=function() choose("modem","modem",false) end},
+  {deviceKey="monitors",label="Assigned monitors: "..#c.monitors,action=function() choose("monitors","monitor",true) end},
  }
- local function add(label,action) rows[#rows+1]={label=label,action=action} end
+ local function add(label,action,deviceKey) rows[#rows+1]={label=label,action=action,deviceKey=deviceKey} end
  if c.role=="gear" then
   add("Fluid: Computer ID: "..tostring(c.serverId or "unset"),function() input("serverId","Fluid: Computer ID") end)
-  add("Additional Gear stations: "..#c.destinations,function() choose("destinations","fluid",true) end)
+  add("Additional Gear stations: "..#c.destinations,function() choose("destinations","fluid",true) end,"destinations")
   add("Reserve Gear casting_0 through casting_42",function()
    c.destinations={};for i=0,42 do c.destinations[#c.destinations+1]="productivemetalworks:casting_"..i end
    message="Draft Gear range 0-42. Active Station Setup assignments are also announced automatically."
   end)
  elseif c.role=="fluid" then
   add("Gear: Computer ID: "..tostring(c.clients[1] or "unset"),function() input("client","Gear: Computer ID") end)
-  add("Main fluid storage sources: "..#c.sources,function() choose("sources","fluid",true) end)
-  add("Gear-only fluid storage: "..#c.gearSources,function() choose("gearSources","fluid",true) end)
+  add("Main fluid storage sources: "..#c.sources,function() choose("sources","fluid",true) end,"sources")
+  add("Gear-only fluid storage: "..#c.gearSources,function() choose("gearSources","fluid",true) end,"gearSources")
   add("Default Gear minimum: "..c.gearMinimumDefault.." mB",function() input("gearMinimumDefault","Minimum per fluid (mB)") end)
-  add("Managed block basins: "..#c.basins,function() choose("basins","basin",true) end)
-  add("Block output chest: "..tostring(c.blockOutputChest or "unset"),function() choose("blockOutputChest","inventory",false) end)
+  add("Managed block basins: "..#c.basins,function() choose("basins","basin",true) end,"basins")
+  add("Block output chest: "..tostring(c.blockOutputChest or "unset"),function() choose("blockOutputChest","inventory",false) end,"blockOutputChest")
   add("Extra reserve for monitor casting: "..c.keepMb.." mB",function() input("keepMb","Additional fluid reserve per material (mB)") end)
   add("Disable local block casting",function() c.basins={};c.blockOutputChest=nil;c.outputs=nil;message="Basins cleared; fluid service remains available" end)
   add("Apply managed basin range 43-105",function()
@@ -159,6 +177,16 @@ local function entries()
   end)
  end
  add("SAVE configuration",save)
+ for _,row in ipairs(rows) do
+  if row.deviceKey then
+   local missing,seen=0,{}
+   for _,name in ipairs(assignedDevices(row.deviceKey)) do
+    if not seen[name] and not connected(row.deviceKey,name,present) then missing=missing+1 end
+    seen[name]=true
+   end
+   if missing>0 then row.label="["..missing.." DISCONNECTED] "..row.label;row.fg=colors.red end
+  end
+ end
  return rows
 end
 local function draw()

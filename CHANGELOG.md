@@ -5,6 +5,14 @@ internal development labels have been consolidated into the entries below;
 1.2.0 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Network Setup 1.3.2 - All missing devices and category warnings
+
+- Every device picker retains assigned devices that disconnect: modems, monitors,
+  main/Gear-only fluid sources, Gear stations, block basins and the output chest.
+- Missing entries are red and can be toggled off, including single assignments.
+- Main-menu device categories turn red and show a leading disconnected count.
+  Reconnecting/removing devices updates these warnings immediately.
+
 ## Network Setup 1.3.1 - Disconnected monitor selections
 
 - Assigned monitors remain in the picker when disconnected and are shown in red
