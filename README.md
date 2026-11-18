@@ -539,3 +539,11 @@ Network Setup -> Auto minimum batch changes this positive whole-block threshold.
 Larger batches still use available material up to the tank limit; manual casting
 continues to allow one block. Existing queued jobs are preserved. If the tank's
 material-specific maximum is smaller than the minimum, no automatic job is added.
+
+### Changed-file updates (Updater 1.8.0)
+
+The updater checks GitHub's commit and file tree, then compares each installed
+script's Git blob hash. Only missing or changed scripts are downloaded. Local
+script edits are replaced; local queue/settings/state files remain untouched.
+Downloaded scripts are hash-checked and validated before installation. A changed
+updater is still installed first and triggers a reboot before other updates.

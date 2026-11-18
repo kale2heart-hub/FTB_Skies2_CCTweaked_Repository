@@ -46,3 +46,7 @@ recovery tests; malformed non-table inventories produce named errors.
 
 Automatic minimum tests check rejection below 64 blocks and admission exactly
 at 64 and above; manual small-quantity coverage remains in the casting tests.
+
+`python tests/test_updater.py` checks selective downloads (zero for unchanged
+installations; only the changed file otherwise), updater-first reboot, download
+and hash validation, rollback and space failures with mocked GitHub/file storage.

@@ -1,4 +1,4 @@
--- @crafting-center {"version":"1.7.0","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Check the updater first; install and reboot if changed, otherwise update the remaining scripts from one GitHub commit.","refreshAfterExit":true,"category":"Tools"}
+-- @crafting-center {"version":"1.8.0","suite":"crafting-center","id":"update","title":"Update Scripts","args":[],"description":"Check the updater first; install and reboot if changed, otherwise update the remaining scripts from one GitHub commit.","refreshAfterExit":true,"category":"Tools"}
 -- Public GitHub updater. Queue, station bindings and job state are untouched.
 local OWNER="kale2heart-hub"
 local REPOSITORY="FTB_Skies2_CCTweaked_Repository"
@@ -18,7 +18,7 @@ end
 local function get(url,json)
     if not http then error("HTTP is disabled on this computer.",0) end
     local response,err,failed=http.get(url,{
-        ["User-Agent"]="CraftingCenterUpdater/1.7.0",
+        ["User-Agent"]="CraftingCenterUpdater/1.8.0",
         ["Accept"]=json and "application/vnd.github+json" or "text/plain",
     })
     if not response then
@@ -67,7 +67,35 @@ local function rollback()
     end
     return errors
 end
-local function normalized(text) return text:gsub("\r\n","\n"):gsub("\r","\n") end
+-- Git blob IDs let us compare local bytes with one compact repository tree.
+local function blobHash(content)
+    local b=bit32
+    local message="blob "..#content.."\0"..content
+    local length=#message*8
+    message=message..string.char(128)
+    message=message..string.rep("\0",(56-#message%64)%64)
+    local function word(n) return string.char(b.extract(n,24,8),b.extract(n,16,8),b.extract(n,8,8),b.extract(n,0,8)) end
+    message=message..word(math.floor(length/4294967296))..word(length%4294967296)
+    local h={0x67452301,0xefcdab89,0x98badcfe,0x10325476,0xc3d2e1f0}
+    for offset=1,#message,64 do
+        local w={}
+        for j=0,15 do local x,y,z,t=message:byte(offset+j*4,offset+j*4+3);w[j]=x*16777216+y*65536+z*256+t end
+        for j=16,79 do w[j]=b.lrotate(b.bxor(w[j-3],w[j-8],w[j-14],w[j-16]),1) end
+        local a,c,d,e,f=h[1],h[2],h[3],h[4],h[5]
+        for j=0,79 do
+            local mix,k
+            if j<20 then mix=b.bor(b.band(c,d),b.band(b.bnot(c),e));k=0x5a827999
+            elseif j<40 then mix=b.bxor(c,d,e);k=0x6ed9eba1
+            elseif j<60 then mix=b.bor(b.band(c,d),b.band(c,e),b.band(d,e));k=0x8f1bbcdc
+            else mix=b.bxor(c,d,e);k=0xca62c1d6 end
+            local nextA=(b.lrotate(a,5)+mix+f+k+w[j])%4294967296
+            f=e;e=d;d=b.lrotate(c,30);c=a;a=nextA
+        end
+        for j,v in ipairs({a,c,d,e,f}) do h[j]=(h[j]+v)%4294967296 end
+        if offset%4096==1 then sleep(0) end
+    end
+    return string.format("%08x%08x%08x%08x%08x",h[1],h[2],h[3],h[4],h[5])
+end
 local function stage(name,content)
     versions[name]=metadataVersion(content,name)
     local chunk,err=load(content,"@"..name,"t",_ENV)
@@ -100,7 +128,7 @@ local function install(names)
         local path=fs.combine(root,name)
         local original=fs.exists(path) and read(path) or nil
         local content=assert(staged[name],"Missing staged script: "..name)
-        if not original or normalized(original)~=normalized(content) then
+        if not original or original~=content then
             transactions[#transactions+1]={name=name,path=path,original=original,content=content}
             needed=needed+math.max(0,#content-(original and #original or 0))
         end
@@ -130,21 +158,36 @@ local function update()
     print("Revision: "..sha:sub(1,12))
     local base="https://raw.githubusercontent.com/"..OWNER.."/"..REPOSITORY.."/"..sha.."/"
     if SCRIPT_DIRECTORY~="" then base=base..SCRIPT_DIRECTORY.."/" end
-    print("Checking update.lua first...")
-    local latest=get(base.."update.lua",false)
-    versions["update.lua"]=metadataVersion(latest,"update.lua")
-    local installed=""
-    local updaterPath=fs.combine(root,"update.lua")
-    if fs.exists(updaterPath) then
-        local f=assert(fs.open(updaterPath,"r")); installed=f.readAll(); f.close()
+    local tree=textutils.unserializeJSON(get("https://api.github.com/repos/"..OWNER.."/"..REPOSITORY.."/git/trees/"..sha.."?recursive=1",true))
+    assert(type(tree)=="table" and type(tree.tree)=="table" and not tree.truncated,"Incomplete GitHub file tree")
+    local hashes={}
+    for _,entry in ipairs(tree.tree) do if entry.type=="blob" then hashes[entry.path]=entry.sha end end
+    local function changed(name)
+        local key=SCRIPT_DIRECTORY~="" and SCRIPT_DIRECTORY.."/"..name or name
+        local hash=hashes[key]
+        assert(type(hash)=="string" and #hash==40,"Missing GitHub file: "..name)
+        local path=fs.combine(root,name)
+        if not fs.exists(path) then return true end
+        local content=read(path)
+        if blobHash(content)==hash then versions[name]=metadataVersion(content,name);return false end
+        return true
     end
-    if normalized(installed)~=normalized(latest) then
-        stage("update.lua",latest)
+    local function download(name)
+        print("Downloading "..name)
+        local content=get(base..name,false)
+        local key=SCRIPT_DIRECTORY~="" and SCRIPT_DIRECTORY.."/"..name or name
+        assert(blobHash(content)==hashes[key],"Download hash mismatch: "..name)
+        stage(name,content)
+        return content
+    end
+    print("Checking update.lua first...")
+    if changed("update.lua") then
+        download("update.lua")
         local firstPhase={"update.lua"}
         -- Fresh root-folder installations need the boot entry before rebooting.
         if not fs.exists(fs.combine(root,"startup.lua")) then
             print("Installing the startup entry for the next boot...")
-            stage("startup.lua",get(base.."startup.lua",false))
+            download("startup.lua")
             firstPhase[#firstPhase+1]="startup.lua"
         end
         install(firstPhase)
@@ -155,9 +198,10 @@ local function update()
     local remaining={}
     for _,name in ipairs(files) do
         if name~="update.lua" then
-            print("Downloading "..name)
-            stage(name,get(base..name,false))
-            remaining[#remaining+1]=name
+            if changed(name) then
+                download(name)
+                remaining[#remaining+1]=name
+            else print("Unchanged "..name) end
         end
     end
     install(remaining)

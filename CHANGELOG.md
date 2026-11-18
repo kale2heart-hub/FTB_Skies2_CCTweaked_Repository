@@ -5,6 +5,20 @@ internal development labels have been consolidated into the entries below;
 1.2.1 is the current Gear UI version. Supporting scripts retain independent
 version numbers. Changes are pushed live for in-game testing.
 
+## Updater 1.8.0 - Download changed scripts only
+
+Date: 2026-11-18
+
+- Fetch one commit-pinned GitHub tree and compare Git blob SHA-1 hashes against
+  local script bytes before downloading. Unchanged scripts are skipped entirely.
+- Missing or locally modified scripts are restored from the selected revision;
+  downloaded contents must match the expected hash before installation.
+- Updater-first installation and reboot, syntax/metadata validation, memory-only
+  rollback and local settings preservation remain in place. Exact file bytes
+  are installed so line-ending differences do not cause repeated downloads.
+- Tests verify zero script downloads when current, one when one file changes,
+  self-update ordering, download/hash failures, rollback and low disk space.
+
 ## Fluid Monitor 1.5.3 - Automatic casting minimum
 
 Date: 2026-11-18

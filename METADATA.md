@@ -255,3 +255,7 @@ transfer receipts, fluid accounting and completed totals remain intact.
 Fluid Monitor 1.5.3 reads `autoMinimumBlocks` from local fluid_network.txt.
 Fluid Network 1.4.2 defaults it to 64; Network Setup 1.5.2 edits it as a positive
 integer. It gates automatic job admission only, after reservation and tank limits.
+
+Updater 1.8.0 compares local Git blob SHA-1 hashes with the commit-pinned GitHub
+recursive tree. No additional on-disk hash manifest is required. Unchanged files
+populate version receipts from local metadata; downloads are hash-validated.
